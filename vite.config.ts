@@ -7,6 +7,8 @@ import path from 'path';
 
 // https://vite.dev/config/
 export default defineConfig({
+  // For GitHub Pages: set VITE_BASE_PATH=/repo-name/ in CI
+  base: process.env.VITE_BASE_PATH || '/',
   plugins: [react(), TanStackRouterVite(), tailwindcss()],
   resolve: {
     alias: {

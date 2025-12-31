@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { WrappedStats } from '@/types/transaction';
 import { formatCurrency } from '@/lib/stats';
-import { X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, Loader2 } from 'lucide-react';
 
 interface StoryModeProps {
   stats: WrappedStats;
@@ -12,6 +12,11 @@ interface Slide {
   id: string;
   background: string;
   render: (stats: WrappedStats) => React.ReactNode;
+}
+
+interface ExportProgress {
+  stage: string;
+  progress: number;
 }
 
 function getSlides(stats: WrappedStats): Slide[] {
@@ -240,17 +245,20 @@ export function StoryMode({ stats, onClose }: StoryModeProps) {
   const slides = useMemo(() => getSlides(stats), [stats]);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
+  const slideContainerRef = useRef<HTMLDivElement>(null);
 
   const goToSlide = useCallback(
     (index: number) => {
-      if (isAnimating) return;
+      if (isAnimating || isExporting) return;
       if (index < 0 || index >= slides.length) return;
 
       setIsAnimating(true);
       setCurrentSlide(index);
       setTimeout(() => setIsAnimating(false), 500);
     },
-    [isAnimating, slides.length]
+    [isAnimating, isExporting, slides.length]
   );
 
   const nextSlide = useCallback(() => {
@@ -268,6 +276,7 @@ export function StoryMode({ stats, onClose }: StoryModeProps) {
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isExporting) return;
       if (e.key === 'ArrowRight' || e.key === ' ') {
         nextSlide();
       } else if (e.key === 'ArrowLeft') {
@@ -279,12 +288,84 @@ export function StoryMode({ stats, onClose }: StoryModeProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [nextSlide, prevSlide, onClose]);
+  }, [nextSlide, prevSlide, onClose, isExporting]);
+
+  const handleExport = useCallback(async () => {
+    if (isExporting) return;
+
+    setIsExporting(true);
+    setExportProgress({ stage: 'Preparing...', progress: 0 });
+
+    try {
+      // Dynamically import the heavy libraries
+      const [{ exportToVideo, captureElement, downloadBlob }, { generateLofiAudio }] =
+        await Promise.all([import('@/lib/video-export'), import('@/lib/music-generator')]);
+
+      // Duration per slide in seconds
+      const SLIDE_DURATION = 3;
+      const totalDuration = slides.length * SLIDE_DURATION;
+
+      // Generate music first
+      setExportProgress({ stage: 'Generating lo-fi music...', progress: 5 });
+      const audioBlob = await generateLofiAudio(totalDuration, progress => {
+        setExportProgress({ stage: 'Generating lo-fi music...', progress: 5 + progress * 0.2 });
+      });
+
+      setExportProgress({ stage: 'Capturing slides...', progress: 25 });
+
+      // Capture each slide
+      const frames: Array<{ dataUrl: string; duration: number }> = [];
+      const originalSlide = currentSlide;
+
+      for (let i = 0; i < slides.length; i++) {
+        setCurrentSlide(i);
+        // Wait for render and animations
+        await new Promise(resolve => setTimeout(resolve, 600));
+
+        if (slideContainerRef.current) {
+          const dataUrl = await captureElement(slideContainerRef.current);
+          frames.push({ dataUrl, duration: SLIDE_DURATION });
+        }
+
+        setExportProgress({
+          stage: 'Capturing slides...',
+          progress: 25 + ((i + 1) / slides.length) * 25,
+        });
+      }
+
+      // Restore original slide
+      setCurrentSlide(originalSlide);
+
+      // Encode video
+      setExportProgress({ stage: 'Encoding video...', progress: 50 });
+      const videoBlob = await exportToVideo(frames, audioBlob, (stage, progress) => {
+        setExportProgress({ stage, progress: 50 + progress * 0.5 });
+      });
+
+      // Download
+      const year = stats.dateRange.start?.getFullYear() || new Date().getFullYear();
+      downloadBlob(videoBlob, `amex-wrapped-${year}.mp4`);
+
+      setExportProgress({ stage: 'Complete!', progress: 100 });
+      setTimeout(() => {
+        setIsExporting(false);
+        setExportProgress(null);
+      }, 1500);
+    } catch (error) {
+      console.error('Export failed:', error);
+      setExportProgress({ stage: 'Export failed. Please try again.', progress: 0 });
+      setTimeout(() => {
+        setIsExporting(false);
+        setExportProgress(null);
+      }, 3000);
+    }
+  }, [isExporting, slides, currentSlide, stats.dateRange.start]);
 
   const slide = slides[currentSlide];
 
   return (
     <div
+      ref={slideContainerRef}
       className={`fixed inset-0 z-50 bg-gradient-to-br ${slide.background} transition-all duration-700`}
     >
       {/* Grain overlay */}
@@ -293,13 +374,45 @@ export function StoryMode({ stats, onClose }: StoryModeProps) {
       {/* Subtle vignette */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.4)_100%)] pointer-events-none" />
 
-      {/* Close button */}
-      <button
-        onClick={onClose}
-        className="absolute top-6 right-6 p-3 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 transition-all z-20"
-      >
-        <X className="w-5 h-5 text-platinum" />
-      </button>
+      {/* Export progress overlay */}
+      {isExporting && exportProgress && (
+        <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center">
+          <div className="bg-card border border-gold/20 rounded-2xl p-8 max-w-sm w-full mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <Loader2 className="w-6 h-6 text-gold animate-spin" />
+              <span className="text-lg text-foreground font-medium">{exportProgress.stage}</span>
+            </div>
+            <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+              <div
+                className="h-full bg-gold transition-all duration-300 ease-out"
+                style={{ width: `${exportProgress.progress}%` }}
+              />
+            </div>
+            <p className="text-sm text-silver mt-3 text-center">
+              {Math.round(exportProgress.progress)}%
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Close and Export buttons */}
+      <div className="absolute top-6 right-6 flex gap-2 z-20">
+        <button
+          onClick={handleExport}
+          disabled={isExporting}
+          className="p-3 rounded-full bg-gold/20 hover:bg-gold/30 border border-gold/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Export to Instagram Story (MP4)"
+        >
+          <Download className="w-5 h-5 text-gold" />
+        </button>
+        <button
+          onClick={onClose}
+          disabled={isExporting}
+          className="p-3 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <X className="w-5 h-5 text-platinum" />
+        </button>
+      </div>
 
       {/* Progress dots */}
       <div className="absolute top-6 left-1/2 -translate-x-1/2 flex gap-2 z-20">
@@ -307,7 +420,8 @@ export function StoryMode({ stats, onClose }: StoryModeProps) {
           <button
             key={index}
             onClick={() => goToSlide(index)}
-            className={`h-1.5 rounded-full transition-all duration-300 ${
+            disabled={isExporting}
+            className={`h-1.5 rounded-full transition-all duration-300 disabled:cursor-not-allowed ${
               index === currentSlide
                 ? 'bg-gold w-8'
                 : index < currentSlide
@@ -329,14 +443,14 @@ export function StoryMode({ stats, onClose }: StoryModeProps) {
       <div className="absolute bottom-10 left-0 right-0 flex justify-center gap-4 z-20">
         <button
           onClick={prevSlide}
-          disabled={currentSlide === 0}
+          disabled={currentSlide === 0 || isExporting}
           className="p-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
         >
           <ChevronLeft className="w-5 h-5 text-platinum" />
         </button>
         <button
           onClick={nextSlide}
-          disabled={currentSlide === slides.length - 1}
+          disabled={currentSlide === slides.length - 1 || isExporting}
           className="p-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
         >
           <ChevronRight className="w-5 h-5 text-platinum" />
@@ -344,18 +458,20 @@ export function StoryMode({ stats, onClose }: StoryModeProps) {
       </div>
 
       {/* Click to advance - behind other elements */}
-      <div
-        className="absolute inset-0 flex z-0"
-        onClick={e => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const x = e.clientX - rect.left;
-          if (x > rect.width / 2) {
-            nextSlide();
-          } else {
-            prevSlide();
-          }
-        }}
-      />
+      {!isExporting && (
+        <div
+          className="absolute inset-0 flex z-0"
+          onClick={e => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            if (x > rect.width / 2) {
+              nextSlide();
+            } else {
+              prevSlide();
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

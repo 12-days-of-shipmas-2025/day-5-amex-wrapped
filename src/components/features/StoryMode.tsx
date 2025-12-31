@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { WrappedStats } from '@/types/transaction';
 import { formatCurrency } from '@/lib/stats';
-import { X, ChevronLeft, ChevronRight, Download, Loader2 } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, Loader2, Music, VolumeX } from 'lucide-react';
 
 interface StoryModeProps {
   stats: WrappedStats;
@@ -247,7 +247,11 @@ export function StoryMode({ stats, onClose }: StoryModeProps) {
   const [isAnimating, setIsAnimating] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const slideContainerRef = useRef<HTMLDivElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
 
   const goToSlide = useCallback(
     (index: number) => {
@@ -289,6 +293,64 @@ export function StoryMode({ stats, onClose }: StoryModeProps) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [nextSlide, prevSlide, onClose, isExporting]);
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+        audioUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleToggleAudio = useCallback(async () => {
+    if (isLoadingAudio) return;
+
+    // If already playing, pause
+    if (isPlaying && audioRef.current) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+      return;
+    }
+
+    // If we have audio loaded, play it
+    if (audioRef.current && audioUrlRef.current) {
+      audioRef.current.play();
+      setIsPlaying(true);
+      return;
+    }
+
+    // Generate new audio
+    setIsLoadingAudio(true);
+    try {
+      const { generateLofiAudio } = await import('@/lib/music-generator');
+      const audioBlob = await generateLofiAudio(60); // 60 seconds of music
+
+      // Create audio element
+      const url = URL.createObjectURL(audioBlob);
+      audioUrlRef.current = url;
+
+      const audio = new Audio(url);
+      audio.loop = true;
+      audioRef.current = audio;
+
+      audio.onended = () => setIsPlaying(false);
+      audio.onpause = () => setIsPlaying(false);
+      audio.onplay = () => setIsPlaying(true);
+
+      await audio.play();
+      setIsPlaying(true);
+    } catch (error) {
+      console.error('Failed to generate audio:', error);
+    } finally {
+      setIsLoadingAudio(false);
+    }
+  }, [isPlaying, isLoadingAudio]);
 
   const handleExport = useCallback(async () => {
     if (isExporting) return;
@@ -353,11 +415,15 @@ export function StoryMode({ stats, onClose }: StoryModeProps) {
       }, 1500);
     } catch (error) {
       console.error('Export failed:', error);
-      setExportProgress({ stage: 'Export failed. Please try again.', progress: 0 });
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      setExportProgress({
+        stage: `Export failed: ${errorMessage.slice(0, 50)}`,
+        progress: 0,
+      });
       setTimeout(() => {
         setIsExporting(false);
         setExportProgress(null);
-      }, 3000);
+      }, 5000);
     }
   }, [isExporting, slides, currentSlide, stats.dateRange.start]);
 
@@ -397,6 +463,24 @@ export function StoryMode({ stats, onClose }: StoryModeProps) {
 
       {/* Close and Export buttons */}
       <div className="absolute top-6 right-6 flex gap-2 z-20">
+        <button
+          onClick={handleToggleAudio}
+          disabled={isExporting}
+          className={`p-3 rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+            isPlaying
+              ? 'bg-emerald-500/30 hover:bg-emerald-500/40 border border-emerald-500/50'
+              : 'bg-white/5 hover:bg-white/10 border border-white/10'
+          }`}
+          title={isPlaying ? 'Pause lo-fi music' : 'Play lo-fi music'}
+        >
+          {isLoadingAudio ? (
+            <Loader2 className="w-5 h-5 text-platinum animate-spin" />
+          ) : isPlaying ? (
+            <VolumeX className="w-5 h-5 text-emerald-400" />
+          ) : (
+            <Music className="w-5 h-5 text-platinum" />
+          )}
+        </button>
         <button
           onClick={handleExport}
           disabled={isExporting}

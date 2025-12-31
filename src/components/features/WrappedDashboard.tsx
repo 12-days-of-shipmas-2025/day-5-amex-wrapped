@@ -62,10 +62,16 @@ export function WrappedDashboard() {
               {/* Total spent header */}
               <div className="flex flex-col md:flex-row md:items-end md:justify-between mb-8 gap-6">
                 <div>
-                  <p className="text-label mb-3">Total Spent</p>
+                  <p className="text-label mb-3">Net Spending</p>
                   <h2 className="text-display-xl text-gold-gradient">
-                    {formatCurrency(stats.totalSpent)}
+                    {formatCurrency(stats.netSpending)}
                   </h2>
+                  {stats.totalRefunds > 0 && (
+                    <p className="text-sm text-silver mt-2">
+                      {formatCurrency(stats.totalSpent)} spent −{' '}
+                      {formatCurrency(stats.totalRefunds)} refunds
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 text-silver">
                   <TrendingUp className="w-4 h-4 text-gold-muted" />

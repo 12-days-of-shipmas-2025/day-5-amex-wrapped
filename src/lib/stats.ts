@@ -23,74 +23,85 @@ function getMonthLabel(monthKey: string): string {
 }
 
 /**
- * Calculate category totals from transactions
+ * Calculate category totals from transactions (net: spending minus refunds)
  */
 export function calculateCategoryTotals(transactions: Transaction[]): CategoryTotal[] {
   const categoryMap = new Map<string, { total: number; count: number }>();
 
-  // Only count charges (positive amounts), not refunds
-  const charges = transactions.filter(t => !t.isRefund);
-  const totalSpent = charges.reduce((sum, t) => sum + t.absoluteAmount, 0);
-
-  for (const t of charges) {
+  // Calculate net spending per category (charges minus refunds)
+  for (const t of transactions) {
+    if (t.isPayment) continue; // Skip payments
     const existing = categoryMap.get(t.mainCategory) || { total: 0, count: 0 };
+    const amount = t.isRefund ? -t.absoluteAmount : t.absoluteAmount;
     categoryMap.set(t.mainCategory, {
-      total: existing.total + t.absoluteAmount,
+      total: existing.total + amount,
       count: existing.count + 1,
     });
   }
 
+  // Calculate total net spending for percentages
+  const totalNetSpent = Array.from(categoryMap.values()).reduce(
+    (sum, data) => sum + Math.max(0, data.total),
+    0
+  );
+
   return Array.from(categoryMap.entries())
     .map(([category, data]) => ({
       category,
-      total: Math.round(data.total * 100) / 100,
+      total: Math.round(Math.max(0, data.total) * 100) / 100,
       count: data.count,
-      percentage: totalSpent > 0 ? Math.round((data.total / totalSpent) * 1000) / 10 : 0,
+      percentage:
+        totalNetSpent > 0 ? Math.round((Math.max(0, data.total) / totalNetSpent) * 1000) / 10 : 0,
     }))
+    .filter(c => c.total > 0) // Only show categories with net positive spending
     .sort((a, b) => b.total - a.total);
 }
 
 /**
- * Calculate merchant totals from transactions
+ * Calculate merchant totals from transactions (net: spending minus refunds)
  */
 export function calculateMerchantTotals(transactions: Transaction[]): MerchantTotal[] {
-  const merchantMap = new Map<string, { total: number; count: number }>();
+  const merchantMap = new Map<string, { total: number; chargeCount: number }>();
 
-  // Only count charges (positive amounts), not refunds
-  const charges = transactions.filter(t => !t.isRefund);
-
-  for (const t of charges) {
-    const existing = merchantMap.get(t.merchantName) || { total: 0, count: 0 };
+  // Calculate net spending per merchant (charges minus refunds)
+  for (const t of transactions) {
+    if (t.isPayment) continue; // Skip payments
+    const existing = merchantMap.get(t.merchantName) || { total: 0, chargeCount: 0 };
+    const amount = t.isRefund ? -t.absoluteAmount : t.absoluteAmount;
     merchantMap.set(t.merchantName, {
-      total: existing.total + t.absoluteAmount,
-      count: existing.count + 1,
+      total: existing.total + amount,
+      chargeCount: t.isRefund ? existing.chargeCount : existing.chargeCount + 1,
     });
   }
 
   return Array.from(merchantMap.entries())
     .map(([merchantName, data]) => ({
       merchantName,
-      total: Math.round(data.total * 100) / 100,
-      count: data.count,
-      averageTransaction: Math.round((data.total / data.count) * 100) / 100,
+      total: Math.round(Math.max(0, data.total) * 100) / 100,
+      count: data.chargeCount,
+      averageTransaction:
+        data.chargeCount > 0
+          ? Math.round((Math.max(0, data.total) / data.chargeCount) * 100) / 100
+          : 0,
     }))
+    .filter(m => m.total > 0) // Only show merchants with net positive spending
     .sort((a, b) => b.total - a.total);
 }
 
 /**
- * Calculate monthly spending totals
+ * Calculate monthly spending totals (net: spending minus refunds)
  */
 export function calculateMonthlySpending(transactions: Transaction[]): MonthlySpending[] {
   const monthMap = new Map<string, { total: number; count: number }>();
 
-  // Only count charges (positive amounts), not refunds
-  const charges = transactions.filter(t => !t.isRefund);
-
-  for (const t of charges) {
+  // Calculate net spending per month (charges minus refunds)
+  for (const t of transactions) {
+    if (t.isPayment) continue; // Skip payments
     const monthKey = getMonthKey(t.parsedDate);
     const existing = monthMap.get(monthKey) || { total: 0, count: 0 };
+    const amount = t.isRefund ? -t.absoluteAmount : t.absoluteAmount;
     monthMap.set(monthKey, {
-      total: existing.total + t.absoluteAmount,
+      total: existing.total + amount,
       count: existing.count + 1,
     });
   }
@@ -99,7 +110,7 @@ export function calculateMonthlySpending(transactions: Transaction[]): MonthlySp
     .map(([month, data]) => ({
       month,
       monthLabel: getMonthLabel(month),
-      total: Math.round(data.total * 100) / 100,
+      total: Math.round(Math.max(0, data.total) * 100) / 100, // Don't show negative months
       count: data.count,
     }))
     .sort((a, b) => a.month.localeCompare(b.month));

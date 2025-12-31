@@ -42,12 +42,17 @@ function getSlides(stats: WrappedStats): Slide[] {
             This year, you spent
           </p>
           <h1 className="font-display text-6xl sm:text-8xl font-medium text-gold-gradient mb-8 animate-scale-in">
-            {formatCurrency(stats.totalSpent)}
+            {formatCurrency(stats.netSpending)}
           </h1>
           <p className="text-xl text-platinum/80 animate-fade-in-delayed font-light">
             across <span className="text-gold font-medium">{stats.transactionCount}</span>{' '}
             transactions
           </p>
+          {stats.totalRefunds > 0 && (
+            <p className="text-sm text-silver/60 animate-fade-in-delayed mt-4">
+              after {formatCurrency(stats.totalRefunds)} in refunds
+            </p>
+          )}
         </div>
       ),
     },

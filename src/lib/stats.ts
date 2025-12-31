@@ -193,15 +193,17 @@ export function calculateWrappedStats(transactions: Transaction[]): WrappedStats
     };
   }
 
-  const charges = transactions.filter(t => !t.isRefund);
-  const refunds = transactions.filter(t => t.isRefund);
+  // Exclude payments from all calculations
+  const purchaseTransactions = transactions.filter(t => !t.isPayment);
+  const charges = purchaseTransactions.filter(t => !t.isRefund);
+  const refunds = purchaseTransactions.filter(t => t.isRefund);
 
   const totalSpent = charges.reduce((sum, t) => sum + t.absoluteAmount, 0);
   const totalRefunds = refunds.reduce((sum, t) => sum + t.absoluteAmount, 0);
 
-  const topCategories = calculateCategoryTotals(transactions);
-  const topMerchants = calculateMerchantTotals(transactions);
-  const monthlySpending = calculateMonthlySpending(transactions);
+  const topCategories = calculateCategoryTotals(purchaseTransactions);
+  const topMerchants = calculateMerchantTotals(purchaseTransactions);
+  const monthlySpending = calculateMonthlySpending(purchaseTransactions);
 
   // Find biggest purchase
   const biggestPurchase = charges.reduce(
@@ -216,8 +218,8 @@ export function calculateWrappedStats(transactions: Transaction[]): WrappedStats
       null as MerchantTotal | null
     ) || null;
 
-  // Get unique merchants
-  const uniqueMerchants = new Set(transactions.map(t => t.merchantName)).size;
+  // Get unique merchants (excluding payments)
+  const uniqueMerchants = new Set(purchaseTransactions.map(t => t.merchantName)).size;
 
   // Get date range
   const sortedByDate = [...transactions].sort(
@@ -228,7 +230,7 @@ export function calculateWrappedStats(transactions: Transaction[]): WrappedStats
     totalSpent: Math.round(totalSpent * 100) / 100,
     totalRefunds: Math.round(totalRefunds * 100) / 100,
     netSpending: Math.round((totalSpent - totalRefunds) * 100) / 100,
-    transactionCount: transactions.length,
+    transactionCount: purchaseTransactions.length,
     averageTransaction:
       charges.length > 0 ? Math.round((totalSpent / charges.length) * 100) / 100 : 0,
     biggestPurchase,
@@ -241,7 +243,7 @@ export function calculateWrappedStats(transactions: Transaction[]): WrappedStats
       start: sortedByDate[0]?.parsedDate || null,
       end: sortedByDate[sortedByDate.length - 1]?.parsedDate || null,
     },
-    foreignSpend: calculateForeignSpend(transactions),
+    foreignSpend: calculateForeignSpend(purchaseTransactions),
   };
 }
 

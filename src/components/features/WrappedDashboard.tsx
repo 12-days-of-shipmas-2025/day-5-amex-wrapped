@@ -2,6 +2,7 @@ import { useTransactionStore } from '@/store/transaction-store';
 import { formatCurrency } from '@/lib/stats';
 import { StatCard } from './StatCard';
 import { MonthlyChart } from './MonthlyChart';
+import { BalanceChart } from './BalanceChart';
 import { TransactionTable } from './TransactionTable';
 import { X, Play, TrendingUp, Calendar, Globe } from 'lucide-react';
 import { useState } from 'react';
@@ -270,8 +271,16 @@ export function WrappedDashboard() {
           </section>
         )}
 
+        {/* Balance Over Time */}
+        <section className="mb-16 animate-fade-up stagger-5">
+          <div className="card-glass rounded-2xl p-6">
+            <p className="text-label mb-6">Balance Over Time</p>
+            <BalanceChart transactions={transactions} height={280} />
+          </div>
+        </section>
+
         {/* Transaction Table */}
-        <section className="animate-fade-up stagger-5">
+        <section className="animate-fade-up stagger-6">
           <p className="text-label mb-6">All Transactions</p>
           <TransactionTable transactions={transactions} />
         </section>

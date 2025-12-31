@@ -17,10 +17,23 @@ import {
   ChevronLeft,
   ChevronRight,
   ArrowUpDown,
+  Globe,
+  RefreshCw,
+  CreditCard,
+  X,
 } from 'lucide-react';
 
 interface TransactionTableProps {
   transactions: Transaction[];
+}
+
+type FilterType = 'all' | 'purchases' | 'refunds' | 'foreign' | 'payments';
+
+interface FilterChip {
+  id: FilterType;
+  label: string;
+  icon: React.ReactNode;
+  count: (transactions: Transaction[]) => number;
 }
 
 const columnHelper = createColumnHelper<Transaction>();
@@ -59,20 +72,76 @@ const columns = [
   }),
 ];
 
+const filterChips: FilterChip[] = [
+  {
+    id: 'all',
+    label: 'All',
+    icon: null,
+    count: t => t.length,
+  },
+  {
+    id: 'purchases',
+    label: 'Purchases',
+    icon: <CreditCard className="w-3.5 h-3.5" />,
+    count: t => t.filter(tx => !tx.isRefund && !tx.isPayment).length,
+  },
+  {
+    id: 'refunds',
+    label: 'Refunds',
+    icon: <RefreshCw className="w-3.5 h-3.5" />,
+    count: t => t.filter(tx => tx.isRefund).length,
+  },
+  {
+    id: 'foreign',
+    label: 'Foreign',
+    icon: <Globe className="w-3.5 h-3.5" />,
+    count: t => t.filter(tx => tx.foreignCurrency).length,
+  },
+  {
+    id: 'payments',
+    label: 'Payments',
+    icon: <CreditCard className="w-3.5 h-3.5" />,
+    count: t => t.filter(tx => tx.isPayment).length,
+  },
+];
+
 export function TransactionTable({ transactions }: TransactionTableProps) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'parsedDate', desc: true }]);
   const [globalFilter, setGlobalFilter] = useState('');
+  const [activeFilter, setActiveFilter] = useState<FilterType>('all');
 
   const filteredData = useMemo(() => {
-    if (!globalFilter) return transactions;
-    const search = globalFilter.toLowerCase();
-    return transactions.filter(
-      t =>
-        t.merchantName.toLowerCase().includes(search) ||
-        t.mainCategory.toLowerCase().includes(search) ||
-        t.description.toLowerCase().includes(search)
-    );
-  }, [transactions, globalFilter]);
+    let filtered = transactions;
+
+    // Apply type filter
+    switch (activeFilter) {
+      case 'purchases':
+        filtered = filtered.filter(t => !t.isRefund && !t.isPayment);
+        break;
+      case 'refunds':
+        filtered = filtered.filter(t => t.isRefund);
+        break;
+      case 'foreign':
+        filtered = filtered.filter(t => t.foreignCurrency);
+        break;
+      case 'payments':
+        filtered = filtered.filter(t => t.isPayment);
+        break;
+    }
+
+    // Apply search filter
+    if (globalFilter) {
+      const search = globalFilter.toLowerCase();
+      filtered = filtered.filter(
+        t =>
+          t.merchantName.toLowerCase().includes(search) ||
+          t.mainCategory.toLowerCase().includes(search) ||
+          t.description.toLowerCase().includes(search)
+      );
+    }
+
+    return filtered;
+  }, [transactions, globalFilter, activeFilter]);
 
   const table = useReactTable({
     data: filteredData,
@@ -93,16 +162,60 @@ export function TransactionTable({ transactions }: TransactionTableProps) {
 
   return (
     <div className="space-y-6">
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gold-muted" />
-        <input
-          type="text"
-          placeholder="Search transactions..."
-          value={globalFilter}
-          onChange={e => setGlobalFilter(e.target.value)}
-          className="input-luxury w-full pl-11"
-        />
+      {/* Search and Filters */}
+      <div className="space-y-4">
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gold-muted pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Search transactions..."
+            value={globalFilter}
+            onChange={e => setGlobalFilter(e.target.value)}
+            className="input-luxury w-full !pl-12"
+          />
+          {globalFilter && (
+            <button
+              onClick={() => setGlobalFilter('')}
+              className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-white/10 transition-colors"
+            >
+              <X className="w-4 h-4 text-silver" />
+            </button>
+          )}
+        </div>
+
+        {/* Filter Chips */}
+        <div className="flex flex-wrap gap-2">
+          {filterChips.map(chip => {
+            const count = chip.count(transactions);
+            const isActive = activeFilter === chip.id;
+            return (
+              <button
+                key={chip.id}
+                onClick={() => setActiveFilter(chip.id)}
+                className={`
+                  flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all
+                  ${
+                    isActive
+                      ? 'bg-gold text-midnight'
+                      : 'bg-midnight-lighter text-silver hover:text-platinum hover:bg-midnight-lighter/80'
+                  }
+                `}
+              >
+                {chip.icon}
+                <span>{chip.label}</span>
+                <span
+                  className={`
+                    px-1.5 py-0.5 rounded-full text-xs
+                    ${isActive ? 'bg-midnight/20' : 'bg-white/10'}
+                  `}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Table */}

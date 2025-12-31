@@ -32,6 +32,22 @@ const CURRENCY_CODES: Record<string, string> = {
   'SAUDI RIYAL': 'SAR',
   'BRAZILIAN REAL': 'BRL',
   'COSTA RICA COLON': 'CRC',
+  'SERBIAN DINAR': 'RSD',
+  'QATARI RIAL': 'QAR',
+  'QATARI RIYAL': 'QAR',
+  'MALAYSIAN RINGGIT': 'MYR',
+  'PHILIPPINE PESO': 'PHP',
+  'INDONESIAN RUPIAH': 'IDR',
+  'KOREAN WON': 'KRW',
+  'SOUTH KOREAN WON': 'KRW',
+  'TAIWANESE DOLLAR': 'TWD',
+  'VIETNAMESE DONG': 'VND',
+  'EGYPTIAN POUND': 'EGP',
+  'MOROCCAN DIRHAM': 'MAD',
+  'ICELANDIC KRONA': 'ISK',
+  'CROATIAN KUNA': 'HRK',
+  'ROMANIAN LEU': 'RON',
+  'BULGARIAN LEV': 'BGN',
 };
 
 /**
@@ -97,18 +113,18 @@ export function parseForeignCurrency(extendedDetails: string): ForeignCurrencyIn
     );
     if (!foreignMatch) return null;
 
-    // Parse the amount (handle European comma format)
-    const foreignAmountStr = foreignMatch[1].replace(',', '.');
+    // Parse the amount (remove thousands separator commas)
+    const foreignAmountStr = foreignMatch[1].replace(/,/g, '');
     const foreignAmount = parseFloat(foreignAmountStr);
     const currency = foreignMatch[2].trim();
 
-    // Parse commission
+    // Parse commission (remove thousands separator commas)
     const commissionMatch = extendedDetails.match(/Commission Amount:\s*([\d,.]+)/i);
-    const commission = commissionMatch ? parseFloat(commissionMatch[1].replace(',', '.')) : 0;
+    const commission = commissionMatch ? parseFloat(commissionMatch[1].replace(/,/g, '')) : 0;
 
-    // Parse exchange rate
+    // Parse exchange rate (remove thousands separator commas)
     const rateMatch = extendedDetails.match(/Currency Exchange Rate:\s*([\d,.]+)/i);
-    const exchangeRate = rateMatch ? parseFloat(rateMatch[1].replace(',', '.')) : 0;
+    const exchangeRate = rateMatch ? parseFloat(rateMatch[1].replace(/,/g, '')) : 0;
 
     // Get currency code
     const currencyCode = CURRENCY_CODES[currency] || currency.substring(0, 3).toUpperCase();
@@ -139,9 +155,18 @@ function generateId(transaction: AmexTransaction, index: number): string {
 /**
  * Transform raw Amex transaction to enriched Transaction
  */
+/**
+ * Check if a transaction is a payment to the card (not a purchase)
+ */
+function isPaymentTransaction(description: string): boolean {
+  const paymentPatterns = [/^PAYMENT RECEIVED/i, /^PAYMENT - THANK YOU/i, /^DIRECT DEBIT PAYMENT/i];
+  return paymentPatterns.some(pattern => pattern.test(description));
+}
+
 export function transformTransaction(raw: AmexTransaction, index: number): Transaction {
   const parsedDate = parseUKDate(raw.date);
   const amount = typeof raw.amount === 'string' ? parseFloat(raw.amount) : raw.amount;
+  const isPayment = isPaymentTransaction(raw.description);
 
   return {
     ...raw,
@@ -149,7 +174,8 @@ export function transformTransaction(raw: AmexTransaction, index: number): Trans
     id: generateId(raw, index),
     parsedDate,
     absoluteAmount: Math.abs(amount),
-    isRefund: amount < 0,
+    isRefund: amount < 0 && !isPayment,
+    isPayment,
     mainCategory: parseMainCategory(raw.category),
     subCategory: parseSubCategory(raw.category),
     merchantName: extractMerchantName(raw.description),

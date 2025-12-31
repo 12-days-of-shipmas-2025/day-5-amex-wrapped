@@ -54,6 +54,8 @@ export interface Transaction extends AmexTransaction {
   absoluteAmount: number;
   /** Is this a refund/credit? */
   isRefund: boolean;
+  /** Is this a payment to the card (not a purchase)? */
+  isPayment: boolean;
   /** Main category (before hyphen) */
   mainCategory: string;
   /** Sub category (after hyphen) */

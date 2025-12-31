@@ -106,6 +106,67 @@ export function calculateMonthlySpending(transactions: Transaction[]): MonthlySp
 }
 
 /**
+ * Calculate foreign currency spending stats
+ */
+export function calculateForeignSpend(transactions: Transaction[]) {
+  const foreignTransactions = transactions.filter(t => t.foreignCurrency && !t.isRefund);
+
+  if (foreignTransactions.length === 0) {
+    return {
+      totalGBP: 0,
+      totalCommission: 0,
+      transactionCount: 0,
+      byCurrency: [],
+    };
+  }
+
+  const totalGBP = foreignTransactions.reduce((sum, t) => sum + t.absoluteAmount, 0);
+  const totalCommission = foreignTransactions.reduce(
+    (sum, t) => sum + (t.foreignCurrency?.commission || 0),
+    0
+  );
+
+  // Group by currency
+  const currencyMap = new Map<
+    string,
+    { currency: string; totalForeign: number; totalGBP: number; count: number }
+  >();
+
+  for (const t of foreignTransactions) {
+    const fc = t.foreignCurrency!;
+    const existing = currencyMap.get(fc.currencyCode) || {
+      currency: fc.currency,
+      totalForeign: 0,
+      totalGBP: 0,
+      count: 0,
+    };
+    currencyMap.set(fc.currencyCode, {
+      currency: fc.currency,
+      totalForeign: existing.totalForeign + fc.foreignAmount,
+      totalGBP: existing.totalGBP + t.absoluteAmount,
+      count: existing.count + 1,
+    });
+  }
+
+  const byCurrency = Array.from(currencyMap.entries())
+    .map(([currencyCode, data]) => ({
+      currencyCode,
+      currency: data.currency,
+      totalForeign: Math.round(data.totalForeign * 100) / 100,
+      totalGBP: Math.round(data.totalGBP * 100) / 100,
+      transactionCount: data.count,
+    }))
+    .sort((a, b) => b.totalGBP - a.totalGBP);
+
+  return {
+    totalGBP: Math.round(totalGBP * 100) / 100,
+    totalCommission: Math.round(totalCommission * 100) / 100,
+    transactionCount: foreignTransactions.length,
+    byCurrency,
+  };
+}
+
+/**
  * Calculate all wrapped statistics from transactions
  */
 export function calculateWrappedStats(transactions: Transaction[]): WrappedStats {
@@ -123,6 +184,12 @@ export function calculateWrappedStats(transactions: Transaction[]): WrappedStats
       monthlySpending: [],
       uniqueMerchants: 0,
       dateRange: { start: null, end: null },
+      foreignSpend: {
+        totalGBP: 0,
+        totalCommission: 0,
+        transactionCount: 0,
+        byCurrency: [],
+      },
     };
   }
 
@@ -174,6 +241,7 @@ export function calculateWrappedStats(transactions: Transaction[]): WrappedStats
       start: sortedByDate[0]?.parsedDate || null,
       end: sortedByDate[sortedByDate.length - 1]?.parsedDate || null,
     },
+    foreignSpend: calculateForeignSpend(transactions),
   };
 }
 

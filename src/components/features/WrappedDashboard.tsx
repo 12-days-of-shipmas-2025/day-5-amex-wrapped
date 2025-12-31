@@ -3,7 +3,7 @@ import { formatCurrency } from '@/lib/stats';
 import { StatCard } from './StatCard';
 import { MonthlyChart } from './MonthlyChart';
 import { TransactionTable } from './TransactionTable';
-import { X, Play, TrendingUp, Calendar } from 'lucide-react';
+import { X, Play, TrendingUp, Calendar, Globe } from 'lucide-react';
 import { useState } from 'react';
 import { StoryMode } from './StoryMode';
 
@@ -153,6 +153,88 @@ export function WrappedDashboard() {
             </div>
           )}
         </section>
+
+        {/* Foreign Currency Spending */}
+        {stats.foreignSpend.transactionCount > 0 && (
+          <section className="mb-16 animate-fade-up stagger-4">
+            <div className="card-glass rounded-2xl p-8 overflow-hidden relative">
+              {/* Background decoration */}
+              <div className="absolute bottom-0 left-0 w-80 h-80 bg-blue-500/5 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2" />
+
+              <div className="relative">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 flex items-center justify-center">
+                    <Globe className="w-6 h-6 text-blue-400" />
+                  </div>
+                  <div>
+                    <p className="text-label">International Spending</p>
+                    <p className="text-sm text-silver">
+                      {stats.foreignSpend.transactionCount} foreign{' '}
+                      {stats.foreignSpend.transactionCount === 1 ? 'transaction' : 'transactions'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-6 mb-8">
+                  <div>
+                    <p className="text-sm text-silver mb-1">Total Foreign Spend (in GBP)</p>
+                    <p className="text-display-lg text-gold-gradient">
+                      {formatCurrency(stats.foreignSpend.totalGBP)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-silver mb-1">FX Commission Paid</p>
+                    <p className="text-display-md text-foreground">
+                      {formatCurrency(stats.foreignSpend.totalCommission)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Currency breakdown */}
+                {stats.foreignSpend.byCurrency.length > 0 && (
+                  <div>
+                    <p className="text-label mb-4">Currencies Used</p>
+                    <div className="grid gap-3">
+                      {stats.foreignSpend.byCurrency.slice(0, 5).map(currency => (
+                        <div
+                          key={currency.currencyCode}
+                          className="flex items-center justify-between p-4 rounded-xl bg-midnight-lighter/50"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-gold/10 flex items-center justify-center">
+                              <span className="text-sm font-mono font-semibold text-gold">
+                                {currency.currencyCode}
+                              </span>
+                            </div>
+                            <div>
+                              <p className="text-foreground font-medium">{currency.currency}</p>
+                              <p className="text-xs text-silver">
+                                {currency.transactionCount}{' '}
+                                {currency.transactionCount === 1 ? 'transaction' : 'transactions'}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-foreground font-semibold">
+                              {formatCurrency(currency.totalGBP)}
+                            </p>
+                            <p className="text-xs text-silver font-mono">
+                              {currency.totalForeign.toLocaleString('en-GB', {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}{' '}
+                              {currency.currencyCode}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* Top Categories */}
         {stats.topCategories.length > 0 && (

@@ -27,6 +27,22 @@ export interface AmexTransaction {
 }
 
 /**
+ * Foreign currency transaction details
+ */
+export interface ForeignCurrencyInfo {
+  /** Original amount in foreign currency */
+  foreignAmount: number;
+  /** Currency name (e.g., "UNITED STATES DOLLAR", "EUROPEAN UNION EURO") */
+  currency: string;
+  /** Currency code (e.g., "USD", "EUR") */
+  currencyCode: string;
+  /** Commission/FX fee charged */
+  commission: number;
+  /** Exchange rate used */
+  exchangeRate: number;
+}
+
+/**
  * Parsed transaction with computed fields
  */
 export interface Transaction extends AmexTransaction {
@@ -44,6 +60,8 @@ export interface Transaction extends AmexTransaction {
   subCategory: string;
   /** Extracted merchant name (cleaned) */
   merchantName: string;
+  /** Foreign currency info if applicable */
+  foreignCurrency: ForeignCurrencyInfo | null;
 }
 
 /**
@@ -106,6 +124,23 @@ export interface WrappedStats {
   dateRange: {
     start: Date | null;
     end: Date | null;
+  };
+  /** Foreign currency spending stats */
+  foreignSpend: {
+    /** Total GBP spent on foreign transactions */
+    totalGBP: number;
+    /** Total FX commission paid */
+    totalCommission: number;
+    /** Number of foreign transactions */
+    transactionCount: number;
+    /** Breakdown by currency */
+    byCurrency: {
+      currencyCode: string;
+      currency: string;
+      totalForeign: number;
+      totalGBP: number;
+      transactionCount: number;
+    }[];
   };
 }
 

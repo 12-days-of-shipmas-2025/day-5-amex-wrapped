@@ -185,6 +185,9 @@ export const SECONDS_PER_BAR = (60 / MUSIC_BPM) * 4; // 3 seconds per bar
 // This generates MUCH faster than 60+ seconds and can be looped seamlessly
 export const LOOPABLE_DURATION = SECONDS_PER_BAR * 4; // 12 seconds
 
+// Crossfade duration for seamless looping (in seconds)
+const CROSSFADE_DURATION = 0.5;
+
 // Cached noise data for drum sounds (avoids regenerating for every hit)
 const noiseDataCache = new Map<string, Float32Array>();
 
@@ -235,9 +238,11 @@ export async function generateLofiAudio(
 
   // Use lower sample rate for faster generation (still good quality)
   const sampleRate = 44100;
-  const totalSamples = Math.ceil(durationSeconds * sampleRate);
+  // Generate extra audio for crossfade overlap
+  const totalDuration = durationSeconds + CROSSFADE_DURATION;
+  const totalSamples = Math.ceil(totalDuration * sampleRate);
 
-  // Create offline context for rendering
+  // Create offline context for rendering (with extra crossfade duration)
   const offlineContext = new OfflineAudioContext(2, totalSamples, sampleRate);
 
   // Randomly select characteristics based on seed
@@ -290,7 +295,7 @@ export async function generateLofiAudio(
 
   // Calculate how many full progressions we need
   const progressionDuration = beatsPerBar * barsPerProgression * secondsPerBeat;
-  const numProgressions = Math.ceil(durationSeconds / progressionDuration);
+  const numProgressions = Math.ceil(totalDuration / progressionDuration);
 
   // Randomly decide if we want swing feel (50% chance)
   const hasSwing = random() > 0.5;
@@ -309,7 +314,7 @@ export async function generateLofiAudio(
       const strumSpeed = 0.03 + random() * 0.04; // 30-70ms between notes
       chord.forEach((note, i) => {
         const noteStart = barStart + i * strumSpeed;
-        if (noteStart < durationSeconds) {
+        if (noteStart < totalDuration) {
           playNote(
             offlineContext,
             filter,
@@ -322,7 +327,7 @@ export async function generateLofiAudio(
       });
 
       // Play bass note
-      if (barStart < durationSeconds) {
+      if (barStart < totalDuration) {
         playNote(
           offlineContext,
           filter,
@@ -339,7 +344,7 @@ export async function generateLofiAudio(
       melodyNotes.forEach((note, i) => {
         const swingOffset = i % 2 === 1 ? swingAmount : 0;
         const noteStart = barStart + i * secondsPerBeat + swingOffset;
-        if (noteStart < durationSeconds && random() > 1 - melodyProbability) {
+        if (noteStart < totalDuration && random() > 1 - melodyProbability) {
           playNote(
             offlineContext,
             filter,
@@ -359,7 +364,7 @@ export async function generateLofiAudio(
         // Add swing to off-beats
         const stepSwing = step % 2 === 1 ? swingAmount * 0.5 : 0;
         const stepTime = barStart + step * secondsPerStep + stepSwing;
-        if (stepTime >= durationSeconds) continue;
+        if (stepTime >= totalDuration) continue;
 
         // Kick drum (with velocity variation)
         if (selectedDrumPattern.kick[step]) {
@@ -398,12 +403,61 @@ export async function generateLofiAudio(
 
   onProgress?.(80);
 
+  // Apply crossfade for seamless looping
+  const loopedBuffer = applyLoopCrossfade(renderedBuffer, durationSeconds, CROSSFADE_DURATION);
+
   // Convert to WAV blob
-  const wavBlob = audioBufferToWav(renderedBuffer);
+  const wavBlob = audioBufferToWav(loopedBuffer);
 
   onProgress?.(100);
 
   return wavBlob;
+}
+
+/**
+ * Apply crossfade to create a seamless loop
+ * Takes audio with extra duration and crossfades the end with the beginning
+ */
+function applyLoopCrossfade(
+  buffer: AudioBuffer,
+  targetDuration: number,
+  crossfadeDuration: number
+): AudioBuffer {
+  const sampleRate = buffer.sampleRate;
+  const targetSamples = Math.floor(targetDuration * sampleRate);
+  const crossfadeSamples = Math.floor(crossfadeDuration * sampleRate);
+  const numChannels = buffer.numberOfChannels;
+
+  // Create new buffer with exact target duration
+  const ctx = new OfflineAudioContext(numChannels, targetSamples, sampleRate);
+  const outputBuffer = ctx.createBuffer(numChannels, targetSamples, sampleRate);
+
+  for (let channel = 0; channel < numChannels; channel++) {
+    const inputData = buffer.getChannelData(channel);
+    const outputData = outputBuffer.getChannelData(channel);
+
+    // Copy most of the audio unchanged
+    for (let i = 0; i < targetSamples - crossfadeSamples; i++) {
+      outputData[i] = inputData[i];
+    }
+
+    // Apply crossfade at the end
+    // Fade out the end portion while fading in the overlapping beginning portion
+    for (let i = 0; i < crossfadeSamples; i++) {
+      const outputIndex = targetSamples - crossfadeSamples + i;
+      const fadeOutIndex = targetSamples - crossfadeSamples + i;
+      const fadeInIndex = i; // Beginning of the audio
+
+      // Use equal-power crossfade for smoother transition
+      const t = i / crossfadeSamples;
+      const fadeOut = Math.cos(t * Math.PI * 0.5);
+      const fadeIn = Math.sin(t * Math.PI * 0.5);
+
+      outputData[outputIndex] = inputData[fadeOutIndex] * fadeOut + inputData[fadeInIndex] * fadeIn;
+    }
+  }
+
+  return outputBuffer;
 }
 
 /**

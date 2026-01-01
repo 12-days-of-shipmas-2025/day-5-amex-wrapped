@@ -819,7 +819,14 @@ export function StoryMode({
     try {
       // Dynamically import the heavy libraries
       const [
-        { exportToVideo, captureElement, downloadBlob, SLIDE_DURATION_SECONDS },
+        {
+          exportToVideo,
+          captureElement,
+          downloadBlob,
+          SLIDE_DURATION_SECONDS,
+          ANIMATION_DURATION_MS,
+          ANIMATION_SETTLE_MS,
+        },
         { generateLofiAudio },
       ] = await Promise.all([import('@/lib/video-export'), import('@/lib/music-generator')]);
 
@@ -842,32 +849,36 @@ export function StoryMode({
 
       setExportProgress({ stage: 'Recording slides...', progress: 20 });
 
-      // Optimized frame capture:
-      // - 6 frames during animation (first 600ms at 10fps)
-      // - 1 frame for remaining static content (2.4 seconds)
+      // Optimized frame capture for smooth animations:
+      // - Capture at 12fps during animation phase (~800ms = 10 frames)
+      // - Use single frame for remaining static content
       const frames: Array<{ dataUrl: string; duration: number }> = [];
-      const animationFrames = 6; // First 600ms
-      const animationFrameDuration = 0.1; // 100ms per frame during animation
+      const animationDurationSec = ANIMATION_DURATION_MS / 1000;
+      const targetFps = 12; // Balance between smoothness and speed
+      const frameInterval = 1000 / targetFps;
+      const animationFrames = Math.ceil(ANIMATION_DURATION_MS / frameInterval);
+      const frameDuration = frameInterval / 1000; // Duration in seconds
 
       for (let i = 0; i < slides.length; i++) {
         // Update visible recording slide
         setRecordingSlide(i);
 
-        // Wait for React to render the new slide
-        await new Promise(resolve => setTimeout(resolve, 50));
+        // Wait for React to render and CSS animations to initialize
+        await new Promise(resolve => setTimeout(resolve, ANIMATION_SETTLE_MS));
 
-        // Capture animation frames from the visible recording element
+        // Capture animation frames for smooth playback
         for (let frame = 0; frame < animationFrames; frame++) {
           if (recordingRef.current) {
             const dataUrl = await captureElement(recordingRef.current);
-            frames.push({ dataUrl, duration: animationFrameDuration });
+            frames.push({ dataUrl, duration: frameDuration });
           }
-          await new Promise(resolve => setTimeout(resolve, 100)); // 100ms between frames
+          // Wait for next frame timing
+          await new Promise(resolve => setTimeout(resolve, frameInterval));
         }
 
         // Capture final static frame for remaining duration
-        const staticDuration = SLIDE_DURATION_SECONDS - animationFrames * animationFrameDuration;
-        if (recordingRef.current) {
+        const staticDuration = SLIDE_DURATION_SECONDS - animationDurationSec;
+        if (staticDuration > 0 && recordingRef.current) {
           const dataUrl = await captureElement(recordingRef.current);
           frames.push({ dataUrl, duration: staticDuration });
         }
@@ -1126,19 +1137,26 @@ export function StoryMode({
         />
       )}
 
-      {/* Recording viewport - visible 9:16 portrait during export */}
+      {/* Recording viewport - visible 9:16 portrait during export (90% of viewport height) */}
       {isRecordingVisible && (
-        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center">
-          {/* Recording frame with 9:16 aspect ratio */}
-          <div className="relative" style={{ width: '270px', height: '480px' }}>
-            {/* The actual capture area - scaled down for display */}
+        <div className="fixed inset-0 z-[100] bg-black flex items-center justify-center">
+          {/* Recording frame with 9:16 aspect ratio - 90% of viewport height */}
+          <div
+            className="relative"
+            style={{
+              height: '90vh',
+              width: 'calc(90vh * 9 / 16)', // Maintain 9:16 aspect ratio
+              maxWidth: '90vw',
+            }}
+          >
+            {/* The actual capture area - scaled to fit display */}
             <div
               ref={recordingRef}
-              className={`absolute inset-0 bg-gradient-to-br ${slides[recordingSlide]?.background || 'from-[#0c1929] to-[#1a2d47]'}`}
+              className={`absolute top-0 left-0 bg-gradient-to-br ${slides[recordingSlide]?.background || 'from-[#0c1929] to-[#1a2d47]'}`}
               style={{
                 width: '1080px',
                 height: '1920px',
-                transform: 'scale(0.25)',
+                transform: `scale(${Math.min((window.innerHeight * 0.9) / 1920, (window.innerWidth * 0.9) / 1080)})`,
                 transformOrigin: 'top left',
               }}
             >
@@ -1146,22 +1164,24 @@ export function StoryMode({
               <div className="absolute inset-0 grain-overlay pointer-events-none" />
               {/* Vignette */}
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.4)_100%)] pointer-events-none" />
-              {/* Slide content */}
-              <div className="h-full flex items-center justify-center px-8 relative z-10">
-                <div className="max-w-2xl w-full">{slides[recordingSlide]?.render(stats)}</div>
+              {/* Slide content - key forces animation restart on slide change */}
+              <div className="h-full flex items-center justify-center px-16 relative z-10">
+                <div key={`recording-${recordingSlide}`} className="max-w-3xl w-full">
+                  {slides[recordingSlide]?.render(stats)}
+                </div>
               </div>
             </div>
 
             {/* Recording indicator */}
-            <div className="absolute -top-8 left-0 right-0 flex items-center justify-center gap-2">
+            <div className="absolute -top-10 left-0 right-0 flex items-center justify-center gap-2">
               <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
               <span className="text-sm text-white font-medium">Recording</span>
             </div>
           </div>
 
-          {/* Progress info */}
-          <div className="absolute bottom-8 left-0 right-0 flex flex-col items-center gap-4">
-            <div className="bg-card/90 backdrop-blur border border-gold/20 rounded-xl px-6 py-4 max-w-sm w-full mx-4">
+          {/* Progress info - positioned at bottom */}
+          <div className="absolute bottom-4 left-0 right-0 flex flex-col items-center gap-4">
+            <div className="bg-card/90 backdrop-blur border border-gold/20 rounded-xl px-6 py-4 max-w-md w-full mx-4">
               <div className="flex items-center gap-3 mb-3">
                 <Loader2 className="w-5 h-5 text-gold animate-spin" />
                 <span className="text-sm text-foreground font-medium">{exportProgress?.stage}</span>

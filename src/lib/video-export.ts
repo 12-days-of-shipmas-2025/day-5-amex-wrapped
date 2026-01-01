@@ -33,9 +33,10 @@ export interface CaptureFrame {
 }
 
 // Video recording settings - synced to music at 80 BPM (3 seconds per bar)
-export const VIDEO_FPS = 10; // Reduced for faster export
+export const VIDEO_FPS = 12; // Balance between smoothness and export speed
 export const SLIDE_DURATION_SECONDS = 3; // 1 bar per slide at 80 BPM
-export const ANIMATION_DURATION_MS = 600; // How long animations take
+export const ANIMATION_DURATION_MS = 800; // CSS animations take ~800ms to fully complete
+export const ANIMATION_SETTLE_MS = 150; // Extra time for animations to initialize after slide change
 
 /**
  * Export frames to MP4 video

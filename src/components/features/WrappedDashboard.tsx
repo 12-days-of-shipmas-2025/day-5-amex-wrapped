@@ -4,13 +4,115 @@ import { StatCard } from './StatCard';
 import { MonthlyChart } from './MonthlyChart';
 import { BalanceChart } from './BalanceChart';
 import { TransactionTable } from './TransactionTable';
-import { X, Play, TrendingUp, Calendar, Globe } from 'lucide-react';
-import { useState } from 'react';
+import { X, Play, TrendingUp, Calendar, Globe, Loader2, Sparkles } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { StoryMode } from './StoryMode';
 
 export function WrappedDashboard() {
   const { stats, transactions, clearData } = useTransactionStore();
   const [showStory, setShowStory] = useState(false);
+  const [isAudioReady, setIsAudioReady] = useState(false);
+  const [audioProgress, setAudioProgress] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
+  const audioBlobRef = useRef<Blob | null>(null);
+  const isGeneratingRef = useRef(false);
+
+  // Generate music seed from stats for reproducible music
+  const musicSeed = useMemo(() => {
+    if (!stats) return 0;
+    const seedParts = [
+      stats.netSpending,
+      stats.transactionCount,
+      stats.uniqueMerchants,
+      stats.dateRange.start?.getTime() || 0,
+      stats.biggestPurchase?.absoluteAmount || 0,
+    ];
+    return seedParts.reduce((acc, val) => acc * 31 + Math.floor(val), 0);
+  }, [stats]);
+
+  // Number of slides for calculating audio duration
+  const slideCount = useMemo(() => {
+    if (!stats) return 12;
+    // Base slides + optional foreign spend + refunds + outro
+    let count = 10; // intro, total, monthly-chart, biggest, favorite, top-category, category-breakdown, average, merchants, top-merchants
+    if (stats.foreignSpend.transactionCount > 0) count++;
+    count += 2; // refunds + outro
+    return count;
+  }, [stats]);
+
+  // Generate audio in background when stats become available
+  useEffect(() => {
+    if (!stats || isGeneratingRef.current) return;
+
+    isGeneratingRef.current = true;
+    let cancelled = false;
+
+    const generateAudio = async () => {
+      try {
+        setAudioProgress(5);
+
+        const { generateLofiAudio, LOOPABLE_DURATION } = await import('@/lib/music-generator');
+        // Use 12-second loopable audio for much faster generation (loops seamlessly)
+        const audioDuration = LOOPABLE_DURATION;
+
+        const audioBlob = await generateLofiAudio(audioDuration, {
+          seed: musicSeed,
+          onProgress: p => {
+            if (!cancelled) {
+              setAudioProgress(5 + p * 0.9);
+            }
+          },
+        });
+
+        if (cancelled) return;
+
+        audioBlobRef.current = audioBlob;
+        const url = URL.createObjectURL(audioBlob);
+        audioUrlRef.current = url;
+
+        const audio = new Audio(url);
+        audio.loop = true; // Loop the 12-second track seamlessly
+        audio.preload = 'auto';
+        audioRef.current = audio;
+
+        await new Promise<void>(resolve => {
+          audio.addEventListener('canplaythrough', () => resolve(), { once: true });
+          audio.load();
+        });
+
+        if (!cancelled) {
+          setIsAudioReady(true);
+          setAudioProgress(100);
+        }
+      } catch (error) {
+        console.error('Failed to generate audio:', error);
+        if (!cancelled) {
+          isGeneratingRef.current = false;
+        }
+      }
+    };
+
+    generateAudio();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [stats, musicSeed, slideCount]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+        audioUrlRef.current = null;
+      }
+    };
+  }, []);
 
   if (!stats) return null;
 
@@ -20,7 +122,16 @@ export function WrappedDashboard() {
       : '';
 
   if (showStory) {
-    return <StoryMode stats={stats} onClose={() => setShowStory(false)} />;
+    return (
+      <StoryMode
+        stats={stats}
+        onClose={() => setShowStory(false)}
+        preloadedAudio={audioRef.current}
+        preloadedAudioUrl={audioUrlRef.current}
+        isAudioPreloaded={isAudioReady}
+        audioBlobForExport={audioBlobRef.current}
+      />
+    );
   }
 
   return (
@@ -38,9 +149,37 @@ export function WrappedDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {/* Audio generation progress */}
+            {!isAudioReady && audioProgress > 0 && (
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-gold/10 border border-gold/20">
+                <Sparkles className="w-3.5 h-3.5 text-gold animate-pulse" />
+                <span className="text-xs text-gold">Creating soundtrack...</span>
+                <div className="w-12 h-1 bg-gold/20 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gold transition-all duration-300"
+                    style={{ width: `${audioProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
             <button onClick={() => setShowStory(true)} className="btn-gold flex items-center gap-2">
-              <Play className="w-4 h-4" />
-              <span>View Story</span>
+              {!isAudioReady && audioProgress > 0 ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="hidden sm:inline">Preparing...</span>
+                  <span className="sm:hidden">...</span>
+                </>
+              ) : isAudioReady ? (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  <span>View Story</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4" />
+                  <span>View Story</span>
+                </>
+              )}
             </button>
             <button onClick={clearData} className="btn-ghost flex items-center gap-2">
               <X className="w-4 h-4" />

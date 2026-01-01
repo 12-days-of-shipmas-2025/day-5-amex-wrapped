@@ -32,6 +32,11 @@ export interface CaptureFrame {
   duration: number; // Duration in seconds
 }
 
+// Video recording settings - synced to music at 80 BPM (3 seconds per bar)
+export const VIDEO_FPS = 10; // Reduced for faster export
+export const SLIDE_DURATION_SECONDS = 3; // 1 bar per slide at 80 BPM
+export const ANIMATION_DURATION_MS = 600; // How long animations take
+
 /**
  * Export frames to MP4 video
  */
@@ -95,9 +100,9 @@ export async function exportToVideo(
     '-pix_fmt',
     'yuv420p',
     '-preset',
-    'fast',
+    'ultrafast', // Faster encoding (was 'fast')
     '-crf',
-    '23',
+    '28', // Lower quality for faster encoding (was 23)
     '-t',
     totalDuration.toString(),
     'output.mp4'
@@ -134,6 +139,38 @@ export async function exportToVideo(
   return videoBlob;
 }
 
+// Instagram story dimensions (9:16 portrait)
+export const STORY_WIDTH = 1080;
+export const STORY_HEIGHT = 1920;
+
+/**
+ * Create an off-screen container for rendering slides
+ */
+export function createOffscreenContainer(): HTMLDivElement {
+  const container = document.createElement('div');
+  container.style.cssText = `
+    position: fixed;
+    left: -9999px;
+    top: 0;
+    width: ${STORY_WIDTH}px;
+    height: ${STORY_HEIGHT}px;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: -1;
+  `;
+  document.body.appendChild(container);
+  return container;
+}
+
+/**
+ * Remove the off-screen container
+ */
+export function removeOffscreenContainer(container: HTMLDivElement): void {
+  if (container.parentNode) {
+    container.parentNode.removeChild(container);
+  }
+}
+
 /**
  * Capture an HTML element as a PNG data URL
  */
@@ -142,13 +179,15 @@ export async function captureElement(element: HTMLElement): Promise<string> {
   const { toPng } = await import('html-to-image');
 
   const dataUrl = await toPng(element, {
-    width: 1080,
-    height: 1920,
+    width: STORY_WIDTH,
+    height: STORY_HEIGHT,
     pixelRatio: 1,
     backgroundColor: '#0c1929',
     style: {
       transform: 'scale(1)',
       transformOrigin: 'top left',
+      width: `${STORY_WIDTH}px`,
+      height: `${STORY_HEIGHT}px`,
     },
   });
 

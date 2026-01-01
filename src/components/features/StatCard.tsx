@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Receipt, Store, RefreshCw, Wallet } from 'lucide-react';
 
 interface StatCardProps {
@@ -14,7 +15,12 @@ const icons = {
   wallet: Wallet,
 };
 
-export function StatCard({ label, value, icon, highlight = false }: StatCardProps) {
+export const StatCard = memo(function StatCard({
+  label,
+  value,
+  icon,
+  highlight = false,
+}: StatCardProps) {
   const Icon = icons[icon];
 
   return (
@@ -46,4 +52,4 @@ export function StatCard({ label, value, icon, highlight = false }: StatCardProp
       </div>
     </div>
   );
-}
+});

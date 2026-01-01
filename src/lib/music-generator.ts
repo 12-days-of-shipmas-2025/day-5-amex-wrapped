@@ -1,23 +1,142 @@
-import * as mm from '@magenta/music';
+// Music generator v2 - uses OfflineAudioContext only
+// Note: Magenta import is dynamic to avoid loading Tone.js for simple audio generation
 
-let musicVAE: mm.MusicVAE | null = null;
+let musicVAE: any = null;
 let isInitializing = false;
 
-// Lo-fi style chord progressions (in MIDI note numbers)
-const LOFI_PROGRESSIONS = [
-  // ii-V-I-vi (Dm7-G7-Cmaj7-Am7)
-  [62, 65, 69, 72], // Dm7
-  [67, 71, 74, 77], // G7
-  [60, 64, 67, 71], // Cmaj7
-  [69, 72, 76, 79], // Am7
-];
-
-const LOFI_BASS_NOTES = [62, 67, 60, 69]; // Root notes for progression
+/**
+ * Seeded pseudo-random number generator (Mulberry32)
+ * Creates reproducible random sequences from a seed
+ */
+function createSeededRandom(seed: number): () => number {
+  return function () {
+    let t = (seed += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 /**
- * Initialize Magenta.js MusicVAE model
+ * Generate a seed from a string (for user-provided seeds)
  */
-async function initMagenta(onProgress?: (progress: number) => void): Promise<mm.MusicVAE> {
+function hashString(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return Math.abs(hash);
+}
+
+// Multiple lo-fi chord progressions to choose from (in MIDI note numbers)
+const CHORD_PROGRESSIONS = [
+  // ii-V-I-vi (Dm7-G7-Cmaj7-Am7) - Classic jazz
+  {
+    chords: [
+      [62, 65, 69, 72],
+      [67, 71, 74, 77],
+      [60, 64, 67, 71],
+      [69, 72, 76, 79],
+    ],
+    bass: [62, 67, 60, 69],
+  },
+  // I-vi-IV-V (Cmaj7-Am7-Fmaj7-G7) - Pop progression
+  {
+    chords: [
+      [60, 64, 67, 71],
+      [69, 72, 76, 79],
+      [65, 69, 72, 76],
+      [67, 71, 74, 77],
+    ],
+    bass: [60, 69, 65, 67],
+  },
+  // vi-IV-I-V (Am7-Fmaj7-Cmaj7-G7) - Emotional
+  {
+    chords: [
+      [69, 72, 76, 79],
+      [65, 69, 72, 76],
+      [60, 64, 67, 71],
+      [67, 71, 74, 77],
+    ],
+    bass: [69, 65, 60, 67],
+  },
+  // I-V-vi-IV (Cmaj7-G7-Am7-Fmaj7) - Axis progression
+  {
+    chords: [
+      [60, 64, 67, 71],
+      [67, 71, 74, 77],
+      [69, 72, 76, 79],
+      [65, 69, 72, 76],
+    ],
+    bass: [60, 67, 69, 65],
+  },
+  // ii-V-iii-vi (Dm7-G7-Em7-Am7) - Neo-soul
+  {
+    chords: [
+      [62, 65, 69, 72],
+      [67, 71, 74, 77],
+      [64, 67, 71, 74],
+      [69, 72, 76, 79],
+    ],
+    bass: [62, 67, 64, 69],
+  },
+  // I-iii-vi-IV (Cmaj7-Em7-Am7-Fmaj7) - Dreamy
+  {
+    chords: [
+      [60, 64, 67, 71],
+      [64, 67, 71, 74],
+      [69, 72, 76, 79],
+      [65, 69, 72, 76],
+    ],
+    bass: [60, 64, 69, 65],
+  },
+];
+
+// Multiple drum patterns to choose from (1 = hit, 0 = rest) - 16 steps per bar
+const DRUM_PATTERNS = [
+  // Classic boom-bap
+  {
+    kick: [1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+    snare: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+    hihat: [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
+    hihatOpen: [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1],
+  },
+  // Laid-back
+  {
+    kick: [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],
+    snare: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+    hihat: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    hihatOpen: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+  },
+  // Syncopated
+  {
+    kick: [1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+    snare: [0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0],
+    hihat: [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
+    hihatOpen: [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+  },
+  // Minimal
+  {
+    kick: [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+    snare: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+    hihat: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+    hihatOpen: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+  },
+  // Driving
+  {
+    kick: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+    snare: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+    hihat: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    hihatOpen: [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1],
+  },
+];
+
+/**
+ * Initialize Magenta.js MusicVAE model (dynamically loaded)
+ */
+async function initMagenta(onProgress?: (progress: number) => void): Promise<any> {
   if (musicVAE) {
     return musicVAE;
   }
@@ -34,6 +153,9 @@ async function initMagenta(onProgress?: (progress: number) => void): Promise<mm.
   onProgress?.(10);
 
   try {
+    // Dynamically import Magenta to avoid loading Tone.js for simple audio generation
+    const mm = await import('@magenta/music');
+
     // Use MelodyRNN which is smaller and faster for our needs
     musicVAE = new mm.MusicVAE(
       'https://storage.googleapis.com/magentadata/js/checkpoints/music_vae/mel_4bar_med_lokl_q2'
@@ -49,43 +171,107 @@ async function initMagenta(onProgress?: (progress: number) => void): Promise<mm.
   }
 }
 
+export interface MusicGeneratorOptions {
+  seed?: number | string; // Numeric seed or string to hash
+  onProgress?: (progress: number) => void;
+}
+
+// Fixed BPM for consistent slide timing sync
+// At 80 BPM: 1 beat = 0.75s, 4 beats (1 bar) = 3s = perfect slide duration
+export const MUSIC_BPM = 80;
+export const SECONDS_PER_BAR = (60 / MUSIC_BPM) * 4; // 3 seconds per bar
+
+// Loopable audio duration - 4 bars = 1 full chord progression = 12 seconds
+// This generates MUCH faster than 60+ seconds and can be looped seamlessly
+export const LOOPABLE_DURATION = SECONDS_PER_BAR * 4; // 12 seconds
+
+// Cached noise data for drum sounds (avoids regenerating for every hit)
+const noiseDataCache = new Map<string, Float32Array>();
+
+function getCachedNoiseData(sampleRate: number, duration: number): Float32Array {
+  const key = `${sampleRate}_${duration}`;
+  if (!noiseDataCache.has(key)) {
+    const length = Math.ceil(sampleRate * duration);
+    const data = new Float32Array(length);
+    for (let i = 0; i < length; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+    noiseDataCache.set(key, data);
+  }
+  return noiseDataCache.get(key)!;
+}
+
+// Cached distortion curve (avoids regenerating for every kick)
+let cachedDistortionCurve: Float32Array<ArrayBuffer> | null = null;
+
 /**
- * Generate a simple lo-fi melody using Web Audio API
- * This is a fallback that doesn't require Magenta model loading
+ * Generate a lo-fi track using Web Audio API
+ * Fully generative with seeded randomness for reproducibility
+ * Optimized for performance
  */
 export async function generateLofiAudio(
   durationSeconds: number,
-  onProgress?: (progress: number) => void
+  onProgressOrOptions?: ((progress: number) => void) | MusicGeneratorOptions
 ): Promise<Blob> {
+  // Handle both old API (just callback) and new API (options object)
+  const options: MusicGeneratorOptions =
+    typeof onProgressOrOptions === 'function'
+      ? { onProgress: onProgressOrOptions }
+      : onProgressOrOptions || {};
+
+  const { onProgress } = options;
+
+  // Create seeded random - use provided seed, or generate one from current time
+  let seedNum: number;
+  if (options.seed !== undefined) {
+    seedNum = typeof options.seed === 'string' ? hashString(options.seed) : options.seed;
+  } else {
+    seedNum = Date.now(); // Different every time if no seed provided
+  }
+
+  const random = createSeededRandom(seedNum);
+
   onProgress?.(10);
 
-  const audioContext = new AudioContext({ sampleRate: 44100 });
-  const sampleRate = audioContext.sampleRate;
+  // Use lower sample rate for faster generation (still good quality)
+  const sampleRate = 44100;
   const totalSamples = Math.ceil(durationSeconds * sampleRate);
 
   // Create offline context for rendering
   const offlineContext = new OfflineAudioContext(2, totalSamples, sampleRate);
 
+  // Randomly select characteristics based on seed
+  const selectedProgression = CHORD_PROGRESSIONS[Math.floor(random() * CHORD_PROGRESSIONS.length)];
+  const selectedDrumPattern = DRUM_PATTERNS[Math.floor(random() * DRUM_PATTERNS.length)];
+
+  // Fixed BPM for slide sync (80 BPM = 3 seconds per bar = 1 bar per slide)
+  const bpm = MUSIC_BPM;
+
+  // Vary reverb and filter settings (but keep ranges tighter for faster processing)
+  const reverbDecay = 1.5 + random() * 1; // 1.5-2.5s decay (shorter = faster)
+  const filterFreq = 1800 + random() * 1000; // 1800-2800 Hz
+  const wetMix = 0.3 + random() * 0.2; // 30-50% wet
+
   // Create a reverb using convolver
   const convolver = offlineContext.createConvolver();
-  const reverbBuffer = createReverbImpulse(offlineContext, 2, 2);
+  const reverbBuffer = createReverbImpulse(offlineContext, 2, reverbDecay);
   convolver.buffer = reverbBuffer;
 
   // Create a low-pass filter for that lo-fi warmth
   const filter = offlineContext.createBiquadFilter();
   filter.type = 'lowpass';
-  filter.frequency.value = 2000;
-  filter.Q.value = 0.7;
+  filter.frequency.value = filterFreq;
+  filter.Q.value = 0.5 + random() * 0.5;
 
   // Create gain nodes
   const masterGain = offlineContext.createGain();
   masterGain.gain.value = 0.3;
 
   const dryGain = offlineContext.createGain();
-  dryGain.gain.value = 0.6;
+  dryGain.gain.value = 1 - wetMix;
 
   const wetGain = offlineContext.createGain();
-  wetGain.gain.value = 0.4;
+  wetGain.gain.value = wetMix;
 
   // Connect effects chain
   filter.connect(dryGain);
@@ -98,7 +284,6 @@ export async function generateLofiAudio(
   onProgress?.(30);
 
   // Generate the lo-fi music
-  const bpm = 75; // Slow, chill tempo
   const beatsPerBar = 4;
   const barsPerProgression = 4;
   const secondsPerBeat = 60 / bpm;
@@ -107,18 +292,23 @@ export async function generateLofiAudio(
   const progressionDuration = beatsPerBar * barsPerProgression * secondsPerBeat;
   const numProgressions = Math.ceil(durationSeconds / progressionDuration);
 
+  // Randomly decide if we want swing feel (50% chance)
+  const hasSwing = random() > 0.5;
+  const swingAmount = hasSwing ? 0.02 + random() * 0.03 : 0; // 20-50ms swing
+
   // Schedule notes
   for (let prog = 0; prog < numProgressions; prog++) {
     const progressionStart = prog * progressionDuration;
 
     for (let bar = 0; bar < barsPerProgression; bar++) {
       const barStart = progressionStart + bar * beatsPerBar * secondsPerBeat;
-      const chord = LOFI_PROGRESSIONS[bar % LOFI_PROGRESSIONS.length];
-      const bassNote = LOFI_BASS_NOTES[bar % LOFI_BASS_NOTES.length];
+      const chord = selectedProgression.chords[bar % selectedProgression.chords.length];
+      const bassNote = selectedProgression.bass[bar % selectedProgression.bass.length];
 
-      // Play chord with slight arpeggiation
+      // Play chord with slight arpeggiation (timing varies with seed)
+      const strumSpeed = 0.03 + random() * 0.04; // 30-70ms between notes
       chord.forEach((note, i) => {
-        const noteStart = barStart + i * 0.05; // Slight strum effect
+        const noteStart = barStart + i * strumSpeed;
         if (noteStart < durationSeconds) {
           playNote(
             offlineContext,
@@ -126,7 +316,7 @@ export async function generateLofiAudio(
             note,
             noteStart,
             beatsPerBar * secondsPerBeat * 0.9,
-            0.15
+            0.12 + random() * 0.06 // Vary velocity
           );
         }
       });
@@ -139,25 +329,65 @@ export async function generateLofiAudio(
           bassNote - 12,
           barStart,
           beatsPerBar * secondsPerBeat * 0.8,
-          0.2
+          0.18 + random() * 0.06
         );
       }
 
-      // Add some melodic embellishments
+      // Add some melodic embellishments (probability and notes vary with seed)
+      const melodyProbability = 0.4 + random() * 0.3; // 40-70% chance per beat
       const melodyNotes = [chord[2], chord[3], chord[2], chord[0]];
       melodyNotes.forEach((note, i) => {
-        const noteStart = barStart + i * secondsPerBeat;
-        if (noteStart < durationSeconds && Math.random() > 0.3) {
+        const swingOffset = i % 2 === 1 ? swingAmount : 0;
+        const noteStart = barStart + i * secondsPerBeat + swingOffset;
+        if (noteStart < durationSeconds && random() > 1 - melodyProbability) {
           playNote(
             offlineContext,
             filter,
             note + 12,
             noteStart,
             secondsPerBeat * 0.7,
-            0.08 + Math.random() * 0.05
+            0.06 + random() * 0.06
           );
         }
       });
+
+      // Add drums - 16 steps per bar
+      const stepsPerBar = 16;
+      const secondsPerStep = (beatsPerBar * secondsPerBeat) / stepsPerBar;
+
+      for (let step = 0; step < stepsPerBar; step++) {
+        // Add swing to off-beats
+        const stepSwing = step % 2 === 1 ? swingAmount * 0.5 : 0;
+        const stepTime = barStart + step * secondsPerStep + stepSwing;
+        if (stepTime >= durationSeconds) continue;
+
+        // Kick drum (with velocity variation)
+        if (selectedDrumPattern.kick[step]) {
+          playKick(offlineContext, filter, stepTime, 0.6 + random() * 0.2);
+        }
+
+        // Snare drum
+        if (selectedDrumPattern.snare[step]) {
+          playSnare(offlineContext, filter, stepTime, 0.4 + random() * 0.2);
+        }
+
+        // Hi-hat (closed) - add ghost notes randomly
+        if (selectedDrumPattern.hihat[step] || random() > 0.85) {
+          const ghostNote = !selectedDrumPattern.hihat[step];
+          playHiHat(
+            offlineContext,
+            filter,
+            stepTime,
+            ghostNote ? 0.1 : 0.25 + random() * 0.1,
+            false
+          );
+        }
+
+        // Hi-hat (open)
+        if (selectedDrumPattern.hihatOpen[step]) {
+          playHiHat(offlineContext, filter, stepTime, 0.2 + random() * 0.1, true);
+        }
+      }
     }
   }
 
@@ -173,13 +403,12 @@ export async function generateLofiAudio(
 
   onProgress?.(100);
 
-  await audioContext.close();
-
   return wavBlob;
 }
 
 /**
  * Play a single note using an oscillator
+ * Optimized: Single oscillator with random detune for warmth (was 2 oscillators)
  */
 function playNote(
   context: OfflineAudioContext,
@@ -191,16 +420,11 @@ function playNote(
 ): void {
   const frequency = 440 * Math.pow(2, (midiNote - 69) / 12);
 
-  // Create oscillator with slight detuning for warmth
-  const osc1 = context.createOscillator();
-  osc1.type = 'sine';
-  osc1.frequency.value = frequency;
-  osc1.detune.value = -5;
-
-  const osc2 = context.createOscillator();
-  osc2.type = 'triangle';
-  osc2.frequency.value = frequency;
-  osc2.detune.value = 5;
+  // Single oscillator with slight random detune for warmth (50% fewer oscillators)
+  const osc = context.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.value = frequency;
+  osc.detune.value = (Math.random() - 0.5) * 10; // Random detune -5 to +5 cents
 
   // Create envelope
   const envelope = context.createGain();
@@ -218,20 +442,153 @@ function playNote(
   envelope.gain.setValueAtTime(volume * sustainLevel, startTime + duration - releaseTime);
   envelope.gain.linearRampToValueAtTime(0, startTime + duration);
 
-  // Connect
-  const mixer = context.createGain();
-  mixer.gain.value = 0.5;
-
-  osc1.connect(mixer);
-  osc2.connect(mixer);
-  mixer.connect(envelope);
+  // Connect directly (no mixer needed with single oscillator)
+  osc.connect(envelope);
   envelope.connect(destination);
 
   // Schedule
-  osc1.start(startTime);
-  osc1.stop(startTime + duration + 0.1);
-  osc2.start(startTime);
-  osc2.stop(startTime + duration + 0.1);
+  osc.start(startTime);
+  osc.stop(startTime + duration + 0.1);
+}
+
+/**
+ * Play a kick drum (808-style)
+ */
+function playKick(
+  context: OfflineAudioContext,
+  destination: AudioNode,
+  startTime: number,
+  volume: number
+): void {
+  const osc = context.createOscillator();
+  osc.type = 'sine';
+
+  // Pitch envelope for 808 kick - starts high and drops
+  osc.frequency.setValueAtTime(150, startTime);
+  osc.frequency.exponentialRampToValueAtTime(40, startTime + 0.1);
+
+  const gain = context.createGain();
+  gain.gain.setValueAtTime(volume * 0.8, startTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.4);
+
+  // Add some distortion for punch (use cached curve)
+  const distortion = context.createWaveShaper();
+  if (!cachedDistortionCurve) {
+    cachedDistortionCurve = makeDistortionCurve(50);
+  }
+  distortion.curve = cachedDistortionCurve;
+
+  osc.connect(distortion);
+  distortion.connect(gain);
+  gain.connect(destination);
+
+  osc.start(startTime);
+  osc.stop(startTime + 0.5);
+}
+
+/**
+ * Play a snare drum
+ */
+function playSnare(
+  context: OfflineAudioContext,
+  destination: AudioNode,
+  startTime: number,
+  volume: number
+): void {
+  // Noise component (use cached noise data for performance)
+  const duration = 0.2;
+  const noiseBuffer = context.createBuffer(1, context.sampleRate * duration, context.sampleRate);
+  const cachedData = getCachedNoiseData(context.sampleRate, duration);
+  noiseBuffer.copyToChannel(cachedData.slice(0, noiseBuffer.length), 0);
+
+  const noise = context.createBufferSource();
+  noise.buffer = noiseBuffer;
+
+  // Filter for snare tone
+  const filter = context.createBiquadFilter();
+  filter.type = 'highpass';
+  filter.frequency.value = 1000;
+
+  const noiseGain = context.createGain();
+  noiseGain.gain.setValueAtTime(volume * 0.3, startTime);
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.15);
+
+  // Tone component
+  const osc = context.createOscillator();
+  osc.type = 'triangle';
+  osc.frequency.value = 200;
+
+  const oscGain = context.createGain();
+  oscGain.gain.setValueAtTime(volume * 0.4, startTime);
+  oscGain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.1);
+
+  noise.connect(filter);
+  filter.connect(noiseGain);
+  noiseGain.connect(destination);
+
+  osc.connect(oscGain);
+  oscGain.connect(destination);
+
+  noise.start(startTime);
+  osc.start(startTime);
+  osc.stop(startTime + 0.2);
+}
+
+/**
+ * Play a hi-hat
+ */
+function playHiHat(
+  context: OfflineAudioContext,
+  destination: AudioNode,
+  startTime: number,
+  volume: number,
+  open: boolean
+): void {
+  // Use cached noise data for performance
+  const duration = open ? 0.3 : 0.05;
+  const noiseBuffer = context.createBuffer(1, context.sampleRate * duration, context.sampleRate);
+  const cachedData = getCachedNoiseData(context.sampleRate, duration);
+  noiseBuffer.copyToChannel(cachedData.slice(0, noiseBuffer.length), 0);
+
+  const noise = context.createBufferSource();
+  noise.buffer = noiseBuffer;
+
+  // High-pass filter for metallic sound
+  const highpass = context.createBiquadFilter();
+  highpass.type = 'highpass';
+  highpass.frequency.value = 7000;
+
+  // Bandpass for tone
+  const bandpass = context.createBiquadFilter();
+  bandpass.type = 'bandpass';
+  bandpass.frequency.value = 10000;
+
+  const gain = context.createGain();
+  const decay = open ? 0.2 : 0.04;
+  gain.gain.setValueAtTime(volume * 0.15, startTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, startTime + decay);
+
+  noise.connect(highpass);
+  highpass.connect(bandpass);
+  bandpass.connect(gain);
+  gain.connect(destination);
+
+  noise.start(startTime);
+}
+
+/**
+ * Create a distortion curve for waveshaper
+ */
+function makeDistortionCurve(amount: number): Float32Array<ArrayBuffer> {
+  const samples = 44100;
+  const buffer = new ArrayBuffer(samples * 4); // 4 bytes per float32
+  const curve = new Float32Array(buffer);
+  const deg = Math.PI / 180;
+  for (let i = 0; i < samples; ++i) {
+    const x = (i * 2) / samples - 1;
+    curve[i] = ((3 + amount) * x * 20 * deg) / (Math.PI + amount * Math.abs(x));
+  }
+  return curve;
 }
 
 /**

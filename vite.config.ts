@@ -17,6 +17,7 @@ export default defineConfig({
   },
   // Required for ffmpeg.wasm SharedArrayBuffer support
   server: {
+    port: 3456,
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',
@@ -24,6 +25,14 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'],
+    esbuildOptions: {
+      define: {
+        global: 'globalThis',
+      },
+    },
+  },
+  define: {
+    global: 'globalThis',
   },
   test: {
     globals: true,

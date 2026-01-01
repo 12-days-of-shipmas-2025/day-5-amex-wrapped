@@ -5,6 +5,30 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>amex-wrapped-temp</title>
+    <!-- Polyfills for Node.js globals used by some libraries (Magenta.js) -->
+    <script>
+      window.global = window;
+      window.process = window.process || {
+        env: {},
+        hrtime: function(previousTimestamp) {
+          const clocktime = performance.now() * 1e-3;
+          let seconds = Math.floor(clocktime);
+          let nanoseconds = Math.floor((clocktime % 1) * 1e9);
+          if (previousTimestamp) {
+            seconds = seconds - previousTimestamp[0];
+            nanoseconds = nanoseconds - previousTimestamp[1];
+            if (nanoseconds < 0) {
+              seconds--;
+              nanoseconds += 1e9;
+            }
+          }
+          return [seconds, nanoseconds];
+        },
+        nextTick: function(fn) { setTimeout(fn, 0); },
+        browser: true
+      };
+      window.Buffer = window.Buffer || { isBuffer: () => false };
+    </script>
   </head>
   <body>
     <div id="root"></div>

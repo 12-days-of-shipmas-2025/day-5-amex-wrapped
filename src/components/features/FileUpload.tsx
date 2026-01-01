@@ -147,6 +147,26 @@ export function FileUpload() {
           Your data stays in your browser &mdash; nothing is uploaded to any server
         </p>
       </div>
+
+      {/* Dev mode: Load test data button */}
+      {import.meta.env.DEV && (
+        <button
+          onClick={async () => {
+            try {
+              const response = await fetch('/activity.csv');
+              const text = await response.text();
+              const blob = new Blob([text], { type: 'text/csv' });
+              const file = new File([blob], 'activity.csv', { type: 'text/csv' });
+              loadCSV(file);
+            } catch (error) {
+              console.error('Failed to load test data:', error);
+            }
+          }}
+          className="mt-4 px-4 py-2 text-sm bg-gold/20 hover:bg-gold/30 border border-gold/30 rounded-lg text-gold transition-all"
+        >
+          🧪 Load Test Data (Dev Only)
+        </button>
+      )}
     </div>
   );
 }

@@ -9,7 +9,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import type { MonthlySpending } from '@/types/transaction';
-import { formatCurrency } from '@/lib/stats';
+import { formatCurrency, getCurrencySymbol } from '@/lib/stats';
 
 interface MonthlyChartProps {
   data: MonthlySpending[];
@@ -57,8 +57,9 @@ export function MonthlyChart({ data, height = 320 }: MonthlyChartProps) {
 
           <YAxis
             tickFormatter={value => {
-              if (value >= 1000) return `£${(value / 1000).toFixed(0)}k`;
-              return `£${value}`;
+              const symbol = getCurrencySymbol();
+              if (value >= 1000) return `${symbol}${(value / 1000).toFixed(0)}k`;
+              return `${symbol}${value}`;
             }}
             tick={{ fill: '#9ca3af', fontSize: 11, fontWeight: 500 }}
             tickLine={false}

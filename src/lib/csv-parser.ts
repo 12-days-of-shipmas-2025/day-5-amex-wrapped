@@ -2,6 +2,21 @@ import Papa from 'papaparse';
 import type { AmexTransaction, Transaction, ForeignCurrencyInfo } from '@/types/transaction';
 
 /**
+ * Detected CSV format type
+ */
+export type AmexFormat = 'uk' | 'mexico';
+
+/**
+ * Result of parsing with detected format info
+ */
+export interface ParseResult {
+  transactions: Transaction[];
+  format: AmexFormat;
+  currency: string;
+  currencyLocale: string;
+}
+
+/**
  * Currency name to code mapping
  */
 const CURRENCY_CODES: Record<string, string> = {
@@ -56,6 +71,55 @@ const CURRENCY_CODES: Record<string, string> = {
 export function parseUKDate(dateStr: string): Date {
   const [day, month, year] = dateStr.split('/').map(Number);
   return new Date(year, month - 1, day);
+}
+
+/**
+ * Parse a Mexico date string (DD MMM YYYY) to a Date object
+ * Example: "29 Dec 2025"
+ */
+export function parseMexicoDate(dateStr: string): Date {
+  const months: Record<string, number> = {
+    Jan: 0,
+    Feb: 1,
+    Mar: 2,
+    Apr: 3,
+    May: 4,
+    Jun: 5,
+    Jul: 6,
+    Aug: 7,
+    Sep: 8,
+    Oct: 9,
+    Nov: 10,
+    Dec: 11,
+  };
+  const parts = dateStr.trim().split(' ');
+  if (parts.length !== 3) return new Date(NaN);
+
+  const day = parseInt(parts[0], 10);
+  const month = months[parts[1]];
+  const year = parseInt(parts[2], 10);
+
+  if (isNaN(day) || month === undefined || isNaN(year)) return new Date(NaN);
+  return new Date(year, month, day);
+}
+
+/**
+ * Detect CSV format based on headers
+ */
+export function detectAmexFormat(headers: string[]): AmexFormat | null {
+  const normalizedHeaders = headers.map(h => h.trim().toLowerCase());
+
+  // UK format headers
+  if (normalizedHeaders.includes('date') && normalizedHeaders.includes('category')) {
+    return 'uk';
+  }
+
+  // Mexico format headers (Spanish)
+  if (normalizedHeaders.includes('fecha') && normalizedHeaders.includes('importe')) {
+    return 'mexico';
+  }
+
+  return null;
 }
 
 /**
@@ -159,8 +223,78 @@ function generateId(transaction: AmexTransaction, index: number): string {
  * Check if a transaction is a payment to the card (not a purchase)
  */
 function isPaymentTransaction(description: string): boolean {
-  const paymentPatterns = [/^PAYMENT RECEIVED/i, /^PAYMENT - THANK YOU/i, /^DIRECT DEBIT PAYMENT/i];
+  const paymentPatterns = [
+    /^PAYMENT RECEIVED/i,
+    /^PAYMENT - THANK YOU/i,
+    /^DIRECT DEBIT PAYMENT/i,
+    /^GRACIAS POR SU PAGO/i, // Mexico: "Thank you for your payment"
+  ];
   return paymentPatterns.some(pattern => pattern.test(description));
+}
+
+/**
+ * Auto-categorize transactions based on merchant description
+ * Used for formats that don't include category (like Mexico)
+ */
+function autoCategorizeMerchant(description: string): string {
+  const desc = description.toUpperCase();
+
+  // Restaurants & Food
+  if (
+    /UBER EATS|RAPPI|DIDI FOOD|REST(?:AURANT)?|CAFE|COFFEE|STARBUCKS|MCDONALD|BURGER|PIZZA|TACO|SUSHI|BAR |CANTINA/.test(
+      desc
+    )
+  ) {
+    return 'Restaurant-Restaurants';
+  }
+
+  // Groceries
+  if (
+    /WALMART|SUPERMARKET|SUPERCENTER|SORIANA|CHEDRAUI|COSTCO|SAM'S|BODEGA|OXXO|7-ELEVEN|MERCADO/.test(
+      desc
+    )
+  ) {
+    return 'Merchandise & Supplies-Groceries';
+  }
+
+  // Transportation
+  if (/UBER(?! EATS)|DIDI|CABIFY|TAXI|GASOLINA|GAS STATION|PEMEX|ESTACION/.test(desc)) {
+    return 'Transportation-Travel';
+  }
+
+  // Entertainment & Streaming
+  if (
+    /NETFLIX|SPOTIFY|DISNEY|PRIME VIDEO|HBO|APPLE.*MUSIC|YOUTUBE|CINEPOLIS|CINEMEX|TICKETMASTER/.test(
+      desc
+    )
+  ) {
+    return 'Entertainment-Entertainment';
+  }
+
+  // Shopping & Retail
+  if (
+    /AMAZON|MERCADOLIBRE|LIVERPOOL|PALACIO|ZARA|H&M|NIKE|ADIDAS|SHEIN|AMERICAN EAGLE/.test(desc)
+  ) {
+    return 'Merchandise & Supplies-Retail';
+  }
+
+  // Technology & Software
+  if (/PAYPAL|APPLE|GOOGLE|MICROSOFT|ADOBE|CANVA|DROPBOX|NOTION|SLACK/.test(desc)) {
+    return 'Business Services-Technology';
+  }
+
+  // Travel & Hotels
+  if (/MARRIOTT|HILTON|HOTEL|AIRBNB|BOOKING|EXPEDIA|AEROMEXICO|VOLARIS|VIVA/.test(desc)) {
+    return 'Travel-Travel';
+  }
+
+  // Utilities & Services
+  if (/CFE|TELMEX|IZZI|TOTALPLAY|MEGACABLE|STARLINK|NETFLIX|INTERNET/.test(desc)) {
+    return 'Utilities-Services';
+  }
+
+  // Default
+  return 'Other-Other';
 }
 
 export function transformTransaction(raw: AmexTransaction, index: number): Transaction {
@@ -184,9 +318,53 @@ export function transformTransaction(raw: AmexTransaction, index: number): Trans
 }
 
 /**
- * Parse Amex UK CSV file content
+ * Transform Mexico format transaction to enriched Transaction
  */
-export function parseAmexCSV(csvContent: string): Promise<Transaction[]> {
+export function transformMexicoTransaction(
+  row: Record<string, string>,
+  index: number
+): Transaction {
+  const dateStr = row['Fecha'] || row['Fecha de Compra'] || '';
+  const parsedDate = parseMexicoDate(dateStr);
+  const description = row['Descripción'] || '';
+  const amount = parseFloat(row['Importe']) || 0;
+  const isPayment = isPaymentTransaction(description);
+
+  // Auto-categorize since Mexico format doesn't have categories
+  const category = autoCategorizeMerchant(description);
+
+  const rawTransaction: AmexTransaction = {
+    date: dateStr,
+    description,
+    amount,
+    extendedDetails: '',
+    appearsOnStatement: description,
+    address: '',
+    townCity: '',
+    postcode: '',
+    country: 'Mexico',
+    reference: `MX-${index}`,
+    category,
+  };
+
+  return {
+    ...rawTransaction,
+    id: `MX-${index}`,
+    parsedDate,
+    absoluteAmount: Math.abs(amount),
+    isRefund: amount < 0 && !isPayment,
+    isPayment,
+    mainCategory: parseMainCategory(category),
+    subCategory: parseSubCategory(category),
+    merchantName: extractMerchantName(description),
+    foreignCurrency: null,
+  };
+}
+
+/**
+ * Parse Amex CSV file content (auto-detects UK or Mexico format)
+ */
+export function parseAmexCSV(csvContent: string): Promise<ParseResult> {
   return new Promise((resolve, reject) => {
     Papa.parse<Record<string, string>>(csvContent, {
       header: true,
@@ -202,28 +380,59 @@ export function parseAmexCSV(csvContent: string): Promise<Transaction[]> {
         }
 
         try {
-          const transactions = results.data
-            .map((row, index) => {
-              // Map CSV columns to our internal structure
-              const rawTransaction: AmexTransaction = {
-                date: row['Date'] || '',
-                description: row['Description'] || '',
-                amount: parseFloat(row['Amount']) || 0,
-                extendedDetails: row['Extended Details'] || '',
-                appearsOnStatement: row['Appears On Your Statement As'] || '',
-                address: row['Address'] || '',
-                townCity: row['Town/City'] || '',
-                postcode: row['Postcode'] || '',
-                country: row['Country'] || '',
-                reference: row['Reference'] || '',
-                category: row['Category'] || 'Other',
-              };
+          // Detect format from headers
+          const headers = results.meta.fields || [];
+          const format = detectAmexFormat(headers);
 
-              return transformTransaction(rawTransaction, index);
-            })
-            .filter(t => t.date && !isNaN(t.parsedDate.getTime()));
+          if (!format) {
+            reject(
+              new Error('Unrecognized CSV format. Please upload an Amex UK or Mexico statement.')
+            );
+            return;
+          }
 
-          resolve(transactions);
+          let transactions: Transaction[];
+
+          if (format === 'mexico') {
+            // Parse Mexico format
+            transactions = results.data
+              .map((row, index) => transformMexicoTransaction(row, index))
+              .filter(t => t.date && !isNaN(t.parsedDate.getTime()));
+
+            resolve({
+              transactions,
+              format: 'mexico',
+              currency: 'MXN',
+              currencyLocale: 'es-MX',
+            });
+          } else {
+            // Parse UK format
+            transactions = results.data
+              .map((row, index) => {
+                const rawTransaction: AmexTransaction = {
+                  date: row['Date'] || '',
+                  description: row['Description'] || '',
+                  amount: parseFloat(row['Amount']) || 0,
+                  extendedDetails: row['Extended Details'] || '',
+                  appearsOnStatement: row['Appears On Your Statement As'] || '',
+                  address: row['Address'] || '',
+                  townCity: row['Town/City'] || '',
+                  postcode: row['Postcode'] || '',
+                  country: row['Country'] || '',
+                  reference: row['Reference'] || '',
+                  category: row['Category'] || 'Other',
+                };
+                return transformTransaction(rawTransaction, index);
+              })
+              .filter(t => t.date && !isNaN(t.parsedDate.getTime()));
+
+            resolve({
+              transactions,
+              format: 'uk',
+              currency: 'GBP',
+              currencyLocale: 'en-GB',
+            });
+          }
         } catch (error) {
           reject(error);
         }

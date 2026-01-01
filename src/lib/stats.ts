@@ -258,13 +258,47 @@ export function calculateWrappedStats(transactions: Transaction[]): WrappedStats
   };
 }
 
+// Currency configuration (set when CSV is loaded)
+let currentCurrency = 'GBP';
+let currentLocale = 'en-GB';
+
 /**
- * Format currency for display
+ * Set the currency configuration for formatting
+ */
+export function setCurrencyConfig(currency: string, locale: string): void {
+  currentCurrency = currency;
+  currentLocale = locale;
+}
+
+/**
+ * Get the current currency code
+ */
+export function getCurrentCurrency(): string {
+  return currentCurrency;
+}
+
+/**
+ * Get the currency symbol for the current currency
+ */
+export function getCurrencySymbol(): string {
+  const symbols: Record<string, string> = {
+    GBP: '£',
+    MXN: '$',
+    USD: '$',
+    EUR: '€',
+  };
+  return symbols[currentCurrency] || '$';
+}
+
+/**
+ * Format currency for display (uses detected currency from CSV)
  */
 export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-GB', {
+  return new Intl.NumberFormat(currentLocale, {
     style: 'currency',
-    currency: 'GBP',
+    currency: currentCurrency,
+    minimumFractionDigits: currentCurrency === 'MXN' ? 0 : 2,
+    maximumFractionDigits: currentCurrency === 'MXN' ? 0 : 2,
   }).format(amount);
 }
 

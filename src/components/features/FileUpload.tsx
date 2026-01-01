@@ -127,7 +127,7 @@ export function FileUpload() {
             {/* Badge */}
             <div className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-midnight-lighter border border-border">
               <FileText className="w-4 h-4 text-gold-muted" />
-              <span className="text-sm text-platinum">Amex UK CSV format</span>
+              <span className="text-sm text-platinum">Amex UK or Mexico CSV</span>
             </div>
           </div>
         )}
@@ -148,24 +148,42 @@ export function FileUpload() {
         </p>
       </div>
 
-      {/* Dev mode: Load test data button */}
+      {/* Dev mode: Load test data buttons */}
       {import.meta.env.DEV && (
-        <button
-          onClick={async () => {
-            try {
-              const response = await fetch('/activity.csv');
-              const text = await response.text();
-              const blob = new Blob([text], { type: 'text/csv' });
-              const file = new File([blob], 'activity.csv', { type: 'text/csv' });
-              loadCSV(file);
-            } catch (error) {
-              console.error('Failed to load test data:', error);
-            }
-          }}
-          className="mt-4 px-4 py-2 text-sm bg-gold/20 hover:bg-gold/30 border border-gold/30 rounded-lg text-gold transition-all"
-        >
-          🧪 Load Test Data (Dev Only)
-        </button>
+        <div className="flex gap-2 mt-4">
+          <button
+            onClick={async () => {
+              try {
+                const response = await fetch('/activity.csv');
+                const text = await response.text();
+                const blob = new Blob([text], { type: 'text/csv' });
+                const file = new File([blob], 'activity.csv', { type: 'text/csv' });
+                loadCSV(file);
+              } catch (error) {
+                console.error('Failed to load test data:', error);
+              }
+            }}
+            className="px-4 py-2 text-sm bg-gold/20 hover:bg-gold/30 border border-gold/30 rounded-lg text-gold transition-all"
+          >
+            🇬🇧 UK Test Data
+          </button>
+          <button
+            onClick={async () => {
+              try {
+                const response = await fetch('/activity-mexico.csv');
+                const text = await response.text();
+                const blob = new Blob([text], { type: 'text/csv' });
+                const file = new File([blob], 'activity-mexico.csv', { type: 'text/csv' });
+                loadCSV(file);
+              } catch (error) {
+                console.error('Failed to load Mexico test data:', error);
+              }
+            }}
+            className="px-4 py-2 text-sm bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 rounded-lg text-emerald-400 transition-all"
+          >
+            🇲🇽 Mexico Test Data
+          </button>
+        </div>
       )}
     </div>
   );

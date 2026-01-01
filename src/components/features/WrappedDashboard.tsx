@@ -31,22 +31,12 @@ export function WrappedDashboard() {
     return seedParts.reduce((acc, val) => acc * 31 + Math.floor(val), 0);
   }, [stats]);
 
-  // Number of slides for calculating audio duration
-  const slideCount = useMemo(() => {
-    if (!stats) return 12;
-    // Base slides + optional foreign spend + refunds + outro
-    let count = 10; // intro, total, monthly-chart, biggest, favorite, top-category, category-breakdown, average, merchants, top-merchants
-    if (stats.foreignSpend.transactionCount > 0) count++;
-    count += 2; // refunds + outro
-    return count;
-  }, [stats]);
-
   // Generate audio in background when stats become available
+  // Using empty dependency array to only run once on mount after stats are available
   useEffect(() => {
     if (!stats || isGeneratingRef.current) return;
 
     isGeneratingRef.current = true;
-    let cancelled = false;
 
     const generateAudio = async () => {
       try {
@@ -59,13 +49,9 @@ export function WrappedDashboard() {
         const audioBlob = await generateLofiAudio(audioDuration, {
           seed: musicSeed,
           onProgress: p => {
-            if (!cancelled) {
-              setAudioProgress(5 + p * 0.9);
-            }
+            setAudioProgress(5 + p * 0.9);
           },
         });
-
-        if (cancelled) return;
 
         audioBlobRef.current = audioBlob;
         const url = URL.createObjectURL(audioBlob);
@@ -76,29 +62,44 @@ export function WrappedDashboard() {
         audio.preload = 'auto';
         audioRef.current = audio;
 
-        await new Promise<void>(resolve => {
-          audio.addEventListener('canplaythrough', () => resolve(), { once: true });
+        // Wait for audio to be ready with timeout
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            resolve();
+          }, 5000); // 5 second timeout
+
+          audio.addEventListener(
+            'canplaythrough',
+            () => {
+              clearTimeout(timeout);
+              resolve();
+            },
+            { once: true }
+          );
+
+          audio.addEventListener(
+            'error',
+            () => {
+              clearTimeout(timeout);
+              reject(new Error('Audio loading failed'));
+            },
+            { once: true }
+          );
+
           audio.load();
         });
 
-        if (!cancelled) {
-          setIsAudioReady(true);
-          setAudioProgress(100);
-        }
+        setIsAudioReady(true);
+        setAudioProgress(100);
       } catch (error) {
         console.error('Failed to generate audio:', error);
-        if (!cancelled) {
-          isGeneratingRef.current = false;
-        }
+        isGeneratingRef.current = false;
       }
     };
 
     generateAudio();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [stats, musicSeed, slideCount]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stats]);
 
   // Cleanup on unmount
   useEffect(() => {

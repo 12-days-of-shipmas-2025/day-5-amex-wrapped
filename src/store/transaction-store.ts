@@ -1,13 +1,16 @@
 import { create } from 'zustand';
 import type { Transaction, WrappedStats } from '@/types/transaction';
-import { parseAmexCSV } from '@/lib/csv-parser';
-import { calculateWrappedStats } from '@/lib/stats';
+import { parseAmexCSV, type AmexFormat } from '@/lib/csv-parser';
+import { calculateWrappedStats, setCurrencyConfig } from '@/lib/stats';
 
 interface TransactionState {
   // Data
   transactions: Transaction[];
   stats: WrappedStats | null;
   fileName: string | null;
+  format: AmexFormat | null;
+  currency: string;
+  currencyLocale: string;
 
   // UI State
   isLoading: boolean;
@@ -23,6 +26,9 @@ export const useTransactionStore = create<TransactionState>(set => ({
   transactions: [],
   stats: null,
   fileName: null,
+  format: null,
+  currency: 'GBP',
+  currencyLocale: 'en-GB',
   isLoading: false,
   error: null,
 
@@ -32,18 +38,24 @@ export const useTransactionStore = create<TransactionState>(set => ({
 
     try {
       const content = await file.text();
-      const transactions = await parseAmexCSV(content);
+      const result = await parseAmexCSV(content);
 
-      if (transactions.length === 0) {
+      if (result.transactions.length === 0) {
         throw new Error('No valid transactions found in the CSV file');
       }
 
-      const stats = calculateWrappedStats(transactions);
+      // Set the currency config for formatting
+      setCurrencyConfig(result.currency, result.currencyLocale);
+
+      const stats = calculateWrappedStats(result.transactions);
 
       set({
-        transactions,
+        transactions: result.transactions,
         stats,
         fileName: file.name,
+        format: result.format,
+        currency: result.currency,
+        currencyLocale: result.currencyLocale,
         isLoading: false,
         error: null,
       });
@@ -57,10 +69,15 @@ export const useTransactionStore = create<TransactionState>(set => ({
 
   // Clear all data
   clearData: () => {
+    // Reset currency to default
+    setCurrencyConfig('GBP', 'en-GB');
     set({
       transactions: [],
       stats: null,
       fileName: null,
+      format: null,
+      currency: 'GBP',
+      currencyLocale: 'en-GB',
       isLoading: false,
       error: null,
     });

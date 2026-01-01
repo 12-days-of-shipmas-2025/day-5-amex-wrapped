@@ -9,7 +9,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import type { Transaction } from '@/types/transaction';
-import { formatCurrency } from '@/lib/stats';
+import { formatCurrency, getCurrencySymbol } from '@/lib/stats';
 
 interface BalanceChartProps {
   transactions: Transaction[];
@@ -138,7 +138,7 @@ export function BalanceChart({ transactions, height = 280 }: BalanceChartProps) 
             axisLine={false}
             tickLine={false}
             tick={{ fill: '#6b7280', fontSize: 11 }}
-            tickFormatter={value => `£${(value / 1000).toFixed(0)}k`}
+            tickFormatter={value => `${getCurrencySymbol()}${(value / 1000).toFixed(0)}k`}
             width={50}
           />
           <Tooltip

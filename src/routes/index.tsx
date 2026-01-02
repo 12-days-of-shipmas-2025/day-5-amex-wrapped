@@ -74,7 +74,7 @@ function HomePage() {
       <div className="mt-6 animate-fade-up stagger-3">
         <p className="text-xs text-silver/60 text-center flex items-center justify-center gap-1.5">
           <MessageCircle className="w-3.5 h-3.5" />
-          Different format not working? Chat with us for support
+          Any issues? Chat with us for support
         </p>
       </div>
     </div>

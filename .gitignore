@@ -24,3 +24,7 @@ dist-ssr
 *.sw?
 .playwright-mcp/
 .vercel
+
+# E2E test results
+test-results/
+playwright-report/

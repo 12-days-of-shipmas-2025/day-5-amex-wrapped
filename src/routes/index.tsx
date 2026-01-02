@@ -17,7 +17,7 @@ function HomePage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-6 py-12 grain-overlay">
+    <div className="min-h-screen flex flex-col items-center justify-center px-4 sm:px-6 py-12 pb-28 grain-overlay">
       {/* Decorative background elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 -left-32 w-96 h-96 bg-gold/5 rounded-full blur-3xl" />
@@ -43,26 +43,30 @@ function HomePage() {
 
       {/* How it works - compact inline version */}
       <div className="mt-10 animate-fade-up stagger-2">
-        <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-silver">
+        <div className="flex flex-col items-center justify-center gap-3 text-sm text-silver">
           <span className="text-xs text-silver/60 uppercase tracking-wider">How to get CSV:</span>
-          <span className="flex items-center gap-2">
-            <span className="w-5 h-5 rounded-full bg-gold/10 text-gold text-xs flex items-center justify-center font-medium">
-              1
+          <div className="flex items-center justify-center gap-2 sm:gap-4">
+            <span className="flex items-center gap-1.5 text-xs sm:text-sm">
+              <span className="w-5 h-5 rounded-full bg-gold/10 text-gold text-xs flex items-center justify-center font-medium shrink-0">
+                1
+              </span>
+              Amex Login
             </span>
-            Sign in to Amex
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="w-5 h-5 rounded-full bg-gold/10 text-gold text-xs flex items-center justify-center font-medium">
-              2
+            <span className="text-silver/30">→</span>
+            <span className="flex items-center gap-1.5 text-xs sm:text-sm">
+              <span className="w-5 h-5 rounded-full bg-gold/10 text-gold text-xs flex items-center justify-center font-medium shrink-0">
+                2
+              </span>
+              Statements
             </span>
-            Statements & Activity
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="w-5 h-5 rounded-full bg-gold/10 text-gold text-xs flex items-center justify-center font-medium">
-              3
+            <span className="text-silver/30">→</span>
+            <span className="flex items-center gap-1.5 text-xs sm:text-sm">
+              <span className="w-5 h-5 rounded-full bg-gold/10 text-gold text-xs flex items-center justify-center font-medium shrink-0">
+                3
+              </span>
+              CSV
             </span>
-            Download CSV
-          </span>
+          </div>
         </div>
       </div>
 

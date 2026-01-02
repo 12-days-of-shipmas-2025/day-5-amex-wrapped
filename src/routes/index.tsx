@@ -77,6 +77,22 @@ function HomePage() {
           Any issues? Chat with us for support
         </p>
       </div>
+
+      {/* Disclaimer */}
+      <div className="mt-8 animate-fade-up stagger-4">
+        <p className="text-[10px] text-silver/40 text-center max-w-sm mx-auto leading-relaxed">
+          Not affiliated with American Express.{' '}
+          <a
+            href="https://github.com/12-days-of-shipmas-2025/day-5-amex-wrapped"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:text-silver/60 transition-colors"
+          >
+            Open source
+          </a>{' '}
+          independent project.
+        </p>
+      </div>
     </div>
   );
 }

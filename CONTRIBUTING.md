@@ -200,6 +200,18 @@ Before requesting review, ensure:
 
 ---
 
+## Adding New Region Support
+
+Want to add support for your country's Amex CSV format? Here's how:
+
+1. **Open an issue** with your region name and a sample of the CSV header row (no actual transaction data)
+2. **Describe the format**: date format, currency format, column names
+3. **Submit a PR** updating `src/lib/csv-parser.ts` with the new parser
+
+**Important**: Never commit real transaction data. Use anonymized/fake data for testing.
+
 ## Questions?
 
-Open an issue for any questions about contributing!
+- **Chat**: Use the chat widget on [amexwrapped.com](https://amexwrapped.com)
+- **Issues**: Open a GitHub issue for bugs or feature requests
+- **Discussions**: Use GitHub Discussions for questions

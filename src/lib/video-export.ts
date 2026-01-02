@@ -33,10 +33,12 @@ export interface CaptureFrame {
 }
 
 // Video recording settings - synced to music at 80 BPM (3 seconds per bar)
-export const VIDEO_FPS = 12; // Balance between smoothness and export speed
+export const VIDEO_FPS = 24; // Smooth video (film standard)
 export const SLIDE_DURATION_SECONDS = 3; // 1 bar per slide at 80 BPM
-export const ANIMATION_DURATION_MS = 800; // CSS animations take ~800ms to fully complete
-export const ANIMATION_SETTLE_MS = 150; // Extra time for animations to initialize after slide change
+
+// Real-time recording settings
+export const REALTIME_FPS = 24; // Capture rate for real-time recording
+export const FRAME_INTERVAL_MS = 1000 / REALTIME_FPS;
 
 /**
  * Export frames to MP4 video
@@ -207,4 +209,137 @@ export function downloadBlob(blob: Blob, filename: string): void {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Real-time recorder that captures frames while playback happens
+ */
+export interface RealtimeRecorder {
+  start: () => void;
+  stop: () => Promise<CaptureFrame[]>;
+  isRecording: boolean;
+}
+
+/**
+ * Create a real-time recorder for an element
+ * Records frames at a fixed interval while playing through content
+ */
+export function createRealtimeRecorder(
+  getElement: () => HTMLElement | null,
+  onProgress?: (frameCount: number) => void
+): RealtimeRecorder {
+  let frames: CaptureFrame[] = [];
+  let intervalId: NodeJS.Timeout | null = null;
+  let isRecording = false;
+  let capturePromise: Promise<void> | null = null;
+
+  const frameDuration = 1 / REALTIME_FPS;
+
+  const captureFrame = async () => {
+    const element = getElement();
+    if (!element || !isRecording) return;
+
+    // Wait for previous capture to complete to avoid overlap
+    if (capturePromise) {
+      await capturePromise;
+    }
+
+    capturePromise = (async () => {
+      try {
+        const dataUrl = await captureElement(element);
+        frames.push({ dataUrl, duration: frameDuration });
+        onProgress?.(frames.length);
+      } catch (e) {
+        console.warn('Frame capture failed:', e);
+      }
+    })();
+  };
+
+  return {
+    get isRecording() {
+      return isRecording;
+    },
+
+    start() {
+      if (isRecording) return;
+      isRecording = true;
+      frames = [];
+
+      // Capture frames at fixed interval
+      intervalId = setInterval(captureFrame, FRAME_INTERVAL_MS);
+
+      // Capture initial frame immediately
+      captureFrame();
+    },
+
+    async stop(): Promise<CaptureFrame[]> {
+      if (!isRecording) return frames;
+
+      isRecording = false;
+
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+
+      // Wait for any pending capture
+      if (capturePromise) {
+        await capturePromise;
+      }
+
+      return frames;
+    },
+  };
+}
+
+/**
+ * Record real-time playback and export to video
+ * This plays through slides at normal speed and captures the actual animations
+ */
+export async function recordRealtimeToVideo(
+  getElement: () => HTMLElement | null,
+  slideCount: number,
+  audioBlob: Blob | null,
+  advanceSlide: () => void,
+  onProgress?: (stage: string, progress: number) => void
+): Promise<Blob> {
+  onProgress?.('Starting real-time recording...', 0);
+
+  const totalDuration = slideCount * SLIDE_DURATION_SECONDS;
+  const totalFramesExpected = totalDuration * REALTIME_FPS;
+
+  // Create recorder
+  const recorder = createRealtimeRecorder(getElement, frameCount => {
+    const recordingProgress = (frameCount / totalFramesExpected) * 50;
+    onProgress?.(`Recording... ${Math.round(frameCount / REALTIME_FPS)}s`, recordingProgress);
+  });
+
+  // Start recording
+  recorder.start();
+
+  // Play through all slides in real-time
+  for (let i = 0; i < slideCount; i++) {
+    // Wait for slide duration before advancing
+    await new Promise(resolve => setTimeout(resolve, SLIDE_DURATION_SECONDS * 1000));
+
+    // Advance to next slide (except on last slide)
+    if (i < slideCount - 1) {
+      advanceSlide();
+    }
+  }
+
+  // Give a brief moment for final frame
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  // Stop recording and get frames
+  const frames = await recorder.stop();
+
+  onProgress?.('Processing recorded frames...', 50);
+
+  // Export to video using existing function
+  const videoBlob = await exportToVideo(frames, audioBlob, (stage, progress) => {
+    onProgress?.(stage, 50 + progress * 0.5);
+  });
+
+  return videoBlob;
 }

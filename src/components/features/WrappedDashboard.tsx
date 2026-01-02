@@ -1,5 +1,6 @@
 import { useTransactionStore } from '@/store/transaction-store';
 import { formatCurrency } from '@/lib/stats';
+import { FEATURE_FLAGS } from '@/lib/feature-flags';
 import { StatCard } from './StatCard';
 import { MonthlyChart } from './MonthlyChart';
 import { BalanceChart } from './BalanceChart';
@@ -34,6 +35,9 @@ export function WrappedDashboard() {
   // Generate audio in background when stats become available
   // Using empty dependency array to only run once on mount after stats are available
   useEffect(() => {
+    // Skip audio generation if audio feature is disabled
+    if (!FEATURE_FLAGS.AUDIO_ENABLED) return;
+
     if (!stats || isGeneratingRef.current) return;
 
     isGeneratingRef.current = true;
@@ -150,8 +154,8 @@ export function WrappedDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {/* Audio generation progress */}
-            {!isAudioReady && audioProgress > 0 && (
+            {/* Audio generation progress - only show if audio feature is enabled */}
+            {FEATURE_FLAGS.AUDIO_ENABLED && !isAudioReady && audioProgress > 0 && (
               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-gold/10 border border-gold/20">
                 <Sparkles className="w-3.5 h-3.5 text-gold animate-pulse" />
                 <span className="text-xs text-gold">Creating soundtrack...</span>
@@ -164,13 +168,13 @@ export function WrappedDashboard() {
               </div>
             )}
             <button onClick={() => setShowStory(true)} className="btn-gold flex items-center gap-2">
-              {!isAudioReady && audioProgress > 0 ? (
+              {FEATURE_FLAGS.AUDIO_ENABLED && !isAudioReady && audioProgress > 0 ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span className="hidden sm:inline">Preparing...</span>
                   <span className="sm:hidden">...</span>
                 </>
-              ) : isAudioReady ? (
+              ) : FEATURE_FLAGS.AUDIO_ENABLED && isAudioReady ? (
                 <>
                   <Sparkles className="w-4 h-4" />
                   <span>View Story</span>

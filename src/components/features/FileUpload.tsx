@@ -1,6 +1,8 @@
 import { useCallback, useState } from 'react';
-import { Upload, FileText, AlertCircle, Loader2, Shield } from 'lucide-react';
+import { Upload, FileText, AlertCircle, Loader2, Shield, Sparkles } from 'lucide-react';
 import { useTransactionStore } from '@/store/transaction-store';
+// Embed demo data directly into the bundle at build time
+import demoCSV from '@/../test/sample-transactions.csv?raw';
 
 export function FileUpload() {
   const [isDragging, setIsDragging] = useState(false);
@@ -46,7 +48,7 @@ export function FileUpload() {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         className={`
-          relative flex flex-col items-center justify-center w-full p-16
+          relative flex flex-col items-center justify-center w-full p-10
           rounded-2xl cursor-pointer overflow-hidden
           transition-all duration-500 ease-out
           ${
@@ -124,10 +126,19 @@ export function FileUpload() {
               </p>
             </div>
 
-            {/* Badge */}
-            <div className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-midnight-lighter border border-border">
-              <FileText className="w-4 h-4 text-gold-muted" />
-              <span className="text-sm text-platinum">Amex UK or Mexico CSV</span>
+            {/* Supported formats */}
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-silver uppercase tracking-wider">Tested with</span>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-midnight-lighter border border-border">
+                  <span className="text-base">🇬🇧</span>
+                  <span className="text-xs text-platinum font-medium">UK</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-midnight-lighter border border-border">
+                  <span className="text-base">🇲🇽</span>
+                  <span className="text-xs text-platinum font-medium">Mexico</span>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -140,51 +151,27 @@ export function FileUpload() {
         </div>
       )}
 
-      {/* Privacy notice */}
-      <div className="flex items-center justify-center gap-2 mt-8 text-silver">
-        <Shield className="w-4 h-4 text-gold-muted" />
-        <p className="text-xs">
-          Your data stays in your browser &mdash; nothing is uploaded to any server
-        </p>
+      {/* Try Demo button */}
+      <div className="flex justify-center mt-8">
+        <button
+          onClick={() => {
+            const blob = new Blob([demoCSV], { type: 'text/csv' });
+            const file = new File([blob], 'demo-transactions.csv', { type: 'text/csv' });
+            loadCSV(file);
+          }}
+          disabled={isLoading}
+          className="group flex items-center gap-2.5 px-6 py-3 text-sm bg-gradient-to-r from-gold/10 to-gold/5 hover:from-gold/20 hover:to-gold/10 border border-gold/20 hover:border-gold/40 rounded-full text-gold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Sparkles className="w-4 h-4 group-hover:animate-pulse" />
+          <span className="font-medium">Try with demo data</span>
+        </button>
       </div>
 
-      {/* Dev mode: Load test data buttons */}
-      {import.meta.env.DEV && (
-        <div className="flex gap-2 mt-4">
-          <button
-            onClick={async () => {
-              try {
-                const response = await fetch('/activity.csv');
-                const text = await response.text();
-                const blob = new Blob([text], { type: 'text/csv' });
-                const file = new File([blob], 'activity.csv', { type: 'text/csv' });
-                loadCSV(file);
-              } catch (error) {
-                console.error('Failed to load test data:', error);
-              }
-            }}
-            className="px-4 py-2 text-sm bg-gold/20 hover:bg-gold/30 border border-gold/30 rounded-lg text-gold transition-all"
-          >
-            🇬🇧 UK Test Data
-          </button>
-          <button
-            onClick={async () => {
-              try {
-                const response = await fetch('/activity-mexico.csv');
-                const text = await response.text();
-                const blob = new Blob([text], { type: 'text/csv' });
-                const file = new File([blob], 'activity-mexico.csv', { type: 'text/csv' });
-                loadCSV(file);
-              } catch (error) {
-                console.error('Failed to load Mexico test data:', error);
-              }
-            }}
-            className="px-4 py-2 text-sm bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 rounded-lg text-emerald-400 transition-all"
-          >
-            🇲🇽 Mexico Test Data
-          </button>
-        </div>
-      )}
+      {/* Privacy notice */}
+      <div className="flex items-center justify-center gap-2 mt-6 text-silver">
+        <Shield className="w-4 h-4 text-emerald-500/70" />
+        <p className="text-xs">100% private &mdash; your data never leaves your browser</p>
+      </div>
     </div>
   );
 }

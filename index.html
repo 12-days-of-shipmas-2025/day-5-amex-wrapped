@@ -4,7 +4,19 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>amex-wrapped-temp</title>
+    <title>Amex Wrapped - Your Year in Spending</title>
+    <meta name="description" content="A Spotify Wrapped-style experience for your American Express transactions. 100% private - your data never leaves your browser." />
+
+    <!-- Open Graph / Social -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://amexwrapped.com/" />
+    <meta property="og:title" content="Amex Wrapped - Your Year in Spending" />
+    <meta property="og:description" content="Beautiful visualizations of your Amex spending. 100% private - data never leaves your browser." />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Amex Wrapped - Your Year in Spending" />
+    <meta name="twitter:description" content="Beautiful visualizations of your Amex spending. 100% private." />
     <!-- Polyfills for Node.js globals used by some libraries (Magenta.js) -->
     <script>
       window.global = window;
@@ -33,5 +45,22 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <!-- Chatwoot Live Chat -->
+    <script>
+      (function(d,t) {
+        var BASE_URL="https://app.chatwoot.com";
+        var g=d.createElement(t),s=d.getElementsByTagName(t)[0];
+        g.src=BASE_URL+"/packs/js/sdk.js";
+        g.defer = true;
+        g.async = true;
+        s.parentNode.insertBefore(g,s);
+        g.onload=function(){
+          window.chatwootSDK.run({
+            websiteToken: 'xiyWsj719fc5BZUsg8i4n88i',
+            baseUrl: BASE_URL
+          })
+        }
+      })(document,"script");
+    </script>
   </body>
 </html>

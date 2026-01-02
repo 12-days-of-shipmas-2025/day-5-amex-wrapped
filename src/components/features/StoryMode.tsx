@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { WrappedStats } from '@/types/transaction';
 import { formatCurrency } from '@/lib/stats';
+import { FEATURE_FLAGS } from '@/lib/feature-flags';
 import {
   X,
   ChevronLeft,
@@ -472,7 +473,9 @@ export function StoryMode({
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isPreloadingAudio, setIsPreloadingAudio] = useState(!isAudioPreloaded); // Skip if already preloaded
+  const [isPreloadingAudio, setIsPreloadingAudio] = useState(
+    FEATURE_FLAGS.AUDIO_ENABLED && !isAudioPreloaded
+  ); // Skip if already preloaded or audio disabled
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [isReady, setIsReady] = useState(false); // Show play button until ready
   const [isAutoPlaying, setIsAutoPlaying] = useState(false); // Auto-advance slides
@@ -687,6 +690,9 @@ export function StoryMode({
 
   // Fallback: Preload audio on mount if not already preloaded by parent
   useEffect(() => {
+    // Skip if audio feature is disabled
+    if (!FEATURE_FLAGS.AUDIO_ENABLED) return;
+
     // Skip if audio was already preloaded by parent component
     if (isAudioPreloaded && preloadedAudio) return;
 
@@ -744,6 +750,7 @@ export function StoryMode({
   }, [musicSeed, slides.length, isAudioPreloaded, preloadedAudio]);
 
   const handleToggleAudio = useCallback(async () => {
+    if (!FEATURE_FLAGS.AUDIO_ENABLED) return;
     if (isLoadingAudio) return;
 
     // If already playing, pause
@@ -792,8 +799,8 @@ export function StoryMode({
     setIsReady(true);
     setIsAutoPlaying(true);
 
-    // Play the preloaded audio
-    if (audioRef.current) {
+    // Play the preloaded audio (only if audio feature is enabled)
+    if (FEATURE_FLAGS.AUDIO_ENABLED && audioRef.current) {
       try {
         await audioRef.current.play();
         setIsPlaying(true);
@@ -809,6 +816,7 @@ export function StoryMode({
   }, []);
 
   const handleExport = useCallback(async () => {
+    if (!FEATURE_FLAGS.VIDEO_EXPORT_ENABLED) return;
     if (isExporting) return;
 
     setIsExporting(true);
@@ -818,80 +826,85 @@ export function StoryMode({
 
     try {
       // Dynamically import the heavy libraries
-      const [
-        {
-          exportToVideo,
-          captureElement,
-          downloadBlob,
-          SLIDE_DURATION_SECONDS,
-          ANIMATION_DURATION_MS,
-          ANIMATION_SETTLE_MS,
-        },
-        { generateLofiAudio },
-      ] = await Promise.all([import('@/lib/video-export'), import('@/lib/music-generator')]);
+      const videoExportModule = await import('@/lib/video-export');
+      const { exportToVideo, captureElement, downloadBlob, SLIDE_DURATION_SECONDS } =
+        videoExportModule;
+
+      // Only import music generator if audio is enabled
+      let generateLofiAudio: typeof import('@/lib/music-generator').generateLofiAudio | undefined;
+      if (FEATURE_FLAGS.AUDIO_ENABLED) {
+        const musicModule = await import('@/lib/music-generator');
+        generateLofiAudio = musicModule.generateLofiAudio;
+      }
 
       const totalDuration = slides.length * SLIDE_DURATION_SECONDS;
 
-      // Use preloaded audio blob if available, otherwise generate new
-      let audioBlob: Blob;
-      if (audioBlobForExport) {
-        setExportProgress({ stage: 'Using preloaded audio...', progress: 15 });
-        audioBlob = audioBlobForExport;
-      } else {
-        setExportProgress({ stage: 'Generating music...', progress: 5 });
-        audioBlob = await generateLofiAudio(totalDuration, {
-          seed: musicSeed,
-          onProgress: progress => {
-            setExportProgress({ stage: 'Generating music...', progress: 5 + progress * 0.15 });
-          },
-        });
+      // Use preloaded audio blob if available, otherwise generate new (only if audio enabled)
+      let audioBlob: Blob | undefined;
+      if (FEATURE_FLAGS.AUDIO_ENABLED) {
+        if (audioBlobForExport) {
+          setExportProgress({ stage: 'Using preloaded audio...', progress: 10 });
+          audioBlob = audioBlobForExport;
+        } else if (generateLofiAudio) {
+          setExportProgress({ stage: 'Generating music...', progress: 5 });
+          audioBlob = await generateLofiAudio(totalDuration, {
+            seed: musicSeed,
+            onProgress: progress => {
+              setExportProgress({ stage: 'Generating music...', progress: 5 + progress * 0.1 });
+            },
+          });
+        }
       }
 
-      setExportProgress({ stage: 'Recording slides...', progress: 20 });
+      setExportProgress({ stage: 'Starting real-time recording...', progress: 15 });
 
-      // Optimized frame capture for smooth animations:
-      // - Capture at 12fps during animation phase (~800ms = 10 frames)
-      // - Use single frame for remaining static content
+      // Wait for initial render
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Simpler approach: capture frames for each slide, distribute duration evenly
+      // This guarantees correct total duration regardless of capture speed
       const frames: Array<{ dataUrl: string; duration: number }> = [];
-      const animationDurationSec = ANIMATION_DURATION_MS / 1000;
-      const targetFps = 12; // Balance between smoothness and speed
-      const frameInterval = 1000 / targetFps;
-      const animationFrames = Math.ceil(ANIMATION_DURATION_MS / frameInterval);
-      const frameDuration = frameInterval / 1000; // Duration in seconds
 
-      for (let i = 0; i < slides.length; i++) {
-        // Update visible recording slide
-        setRecordingSlide(i);
+      for (let slideIndex = 0; slideIndex < slides.length; slideIndex++) {
+        setRecordingSlide(slideIndex);
 
-        // Wait for React to render and CSS animations to initialize
-        await new Promise(resolve => setTimeout(resolve, ANIMATION_SETTLE_MS));
+        // Wait for slide to render and animation to start
+        await new Promise(resolve => setTimeout(resolve, 50));
 
-        // Capture animation frames for smooth playback
-        for (let frame = 0; frame < animationFrames; frame++) {
+        // Capture frames for this slide
+        const slideFrames: string[] = [];
+        const slideStartTime = Date.now();
+        const slideDurationMs = SLIDE_DURATION_SECONDS * 1000;
+
+        // Capture as many frames as we can during the slide duration
+        while (Date.now() - slideStartTime < slideDurationMs) {
           if (recordingRef.current) {
-            const dataUrl = await captureElement(recordingRef.current);
-            frames.push({ dataUrl, duration: frameDuration });
+            try {
+              const dataUrl = await captureElement(recordingRef.current);
+              slideFrames.push(dataUrl);
+            } catch (e) {
+              console.warn('Frame capture failed:', e);
+            }
           }
-          // Wait for next frame timing
-          await new Promise(resolve => setTimeout(resolve, frameInterval));
         }
 
-        // Capture final static frame for remaining duration
-        const staticDuration = SLIDE_DURATION_SECONDS - animationDurationSec;
-        if (staticDuration > 0 && recordingRef.current) {
-          const dataUrl = await captureElement(recordingRef.current);
-          frames.push({ dataUrl, duration: staticDuration });
+        // Distribute slide duration evenly across captured frames
+        const frameDuration = SLIDE_DURATION_SECONDS / Math.max(1, slideFrames.length);
+        for (const dataUrl of slideFrames) {
+          frames.push({ dataUrl, duration: frameDuration });
         }
 
+        const progress = 15 + ((slideIndex + 1) / slides.length) * 35;
         setExportProgress({
-          stage: `Recording slide ${i + 1}/${slides.length}...`,
-          progress: 20 + ((i + 1) / slides.length) * 30,
+          stage: `Recorded slide ${slideIndex + 1}/${slides.length} (${slideFrames.length} frames)`,
+          progress,
         });
       }
 
-      // Encode video
-      setExportProgress({ stage: 'Encoding video...', progress: 50 });
-      const videoBlob = await exportToVideo(frames, audioBlob, (stage, progress) => {
+      setExportProgress({ stage: `Captured ${frames.length} frames, encoding...`, progress: 50 });
+
+      // Encode video (pass null if no audio)
+      const videoBlob = await exportToVideo(frames, audioBlob ?? null, (stage, progress) => {
         setExportProgress({ stage, progress: 50 + progress * 0.5 });
       });
 
@@ -1049,33 +1062,38 @@ export function StoryMode({
             <Play className="w-5 h-5 text-platinum" />
           )}
         </button>
-        {/* Music toggle */}
-        <button
-          onClick={handleToggleAudio}
-          disabled={isExporting}
-          className={`p-3 rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-            isPlaying
-              ? 'bg-emerald-500/30 hover:bg-emerald-500/40 border border-emerald-500/50'
-              : 'bg-white/5 hover:bg-white/10 border border-white/10'
-          }`}
-          title={isPlaying ? 'Mute music' : 'Play music'}
-        >
-          {isLoadingAudio ? (
-            <Loader2 className="w-5 h-5 text-platinum animate-spin" />
-          ) : isPlaying ? (
-            <Music className="w-5 h-5 text-emerald-400" />
-          ) : (
-            <VolumeX className="w-5 h-5 text-platinum" />
-          )}
-        </button>
-        <button
-          onClick={handleExport}
-          disabled={isExporting}
-          className="p-3 rounded-full bg-gold/20 hover:bg-gold/30 border border-gold/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          title="Export to Instagram Story (MP4)"
-        >
-          <Download className="w-5 h-5 text-gold" />
-        </button>
+        {/* Music toggle - only show if audio feature is enabled */}
+        {FEATURE_FLAGS.AUDIO_ENABLED && (
+          <button
+            onClick={handleToggleAudio}
+            disabled={isExporting}
+            className={`p-3 rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+              isPlaying
+                ? 'bg-emerald-500/30 hover:bg-emerald-500/40 border border-emerald-500/50'
+                : 'bg-white/5 hover:bg-white/10 border border-white/10'
+            }`}
+            title={isPlaying ? 'Mute music' : 'Play music'}
+          >
+            {isLoadingAudio ? (
+              <Loader2 className="w-5 h-5 text-platinum animate-spin" />
+            ) : isPlaying ? (
+              <Music className="w-5 h-5 text-emerald-400" />
+            ) : (
+              <VolumeX className="w-5 h-5 text-platinum" />
+            )}
+          </button>
+        )}
+        {/* Export button - only show if video export feature is enabled */}
+        {FEATURE_FLAGS.VIDEO_EXPORT_ENABLED && (
+          <button
+            onClick={handleExport}
+            disabled={isExporting}
+            className="p-3 rounded-full bg-gold/20 hover:bg-gold/30 border border-gold/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Export to Instagram Story (MP4)"
+          >
+            <Download className="w-5 h-5 text-gold" />
+          </button>
+        )}
         <button
           onClick={onClose}
           disabled={isExporting}
@@ -1165,8 +1183,8 @@ export function StoryMode({
               {/* Vignette */}
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.4)_100%)] pointer-events-none" />
               {/* Slide content - key forces animation restart on slide change */}
-              <div className="h-full flex items-center justify-center px-16 relative z-10">
-                <div key={`recording-${recordingSlide}`} className="max-w-3xl w-full">
+              <div className="h-full flex items-center justify-center px-6 relative z-10">
+                <div key={`recording-${recordingSlide}`} className="max-w-4xl w-full">
                   {slides[recordingSlide]?.render(stats)}
                 </div>
               </div>

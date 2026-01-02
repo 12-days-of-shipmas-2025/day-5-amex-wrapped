@@ -11,7 +11,7 @@ Currently tested and working with:
 - **UK** - American Express UK statement exports
 - **Mexico** - American Express Mexico statement exports
 
-Have a different format? [Chat with us](https://amexwrapped.com) for support - we'd love to add more regions!
+Have a different format? [Chat with us](https://humanwritten.ai) for support - we'd love to add more regions!
 
 ## Features
 
@@ -102,7 +102,7 @@ Want to add support for your region's Amex format? Open an issue or PR with samp
 
 ## Support
 
-Having issues or want to request a new region? Use the chat widget on [amexwrapped.com](https://amexwrapped.com) or open a GitHub issue.
+Having issues or want to request a new region? [Chat with us](https://humanwritten.ai) or open a GitHub issue.
 
 ## License
 

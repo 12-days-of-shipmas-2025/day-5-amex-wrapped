@@ -1043,9 +1043,8 @@ export function StoryMode({
         </div>
       )}
 
-      {/* Close and Export buttons */}
-      <div className="absolute top-6 right-6 flex gap-2 z-20">
-        {/* Auto-play toggle */}
+      {/* Pause button - top left */}
+      <div className="absolute top-6 left-6 z-20">
         <button
           onClick={handleToggleAutoPlay}
           disabled={isExporting}
@@ -1062,6 +1061,10 @@ export function StoryMode({
             <Play className="w-5 h-5 text-platinum" />
           )}
         </button>
+      </div>
+
+      {/* Close and Export buttons */}
+      <div className="absolute top-6 right-6 flex gap-2 z-20">
         {/* Music toggle - only show if audio feature is enabled */}
         {FEATURE_FLAGS.AUDIO_ENABLED && (
           <button

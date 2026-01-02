@@ -45,7 +45,8 @@ export const StatCard = memo(function StatCard({
           <span className="text-label">{label}</span>
         </div>
         <p
-          className={`text-2xl font-semibold ${highlight ? 'text-gold-gradient' : 'text-foreground'}`}
+          className={`text-lg sm:text-2xl font-semibold truncate ${highlight ? 'text-gold-gradient' : 'text-foreground'}`}
+          title={value}
         >
           {value}
         </p>
